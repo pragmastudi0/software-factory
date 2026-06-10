@@ -1,0 +1,438 @@
+{
+  "name": "01 - Idea Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "intake",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "intake-webhook-01",
+      "name": "Receive Idea",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "intake-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst idea = (body.idea || '').trim();\nconst userEmail = (body.user_email || '').trim();\nlet projectName = (body.project_name || '').trim();\n\nif (!idea || idea.length < 10) {\n  throw new Error('Idea must be at least 10 characters long');\n}\nif (idea.length > 5000) {\n  throw new Error('Idea must be under 5000 characters');\n}\n\nif (!projectName) {\n  // Auto-generate from first 5 meaningful words of idea\n  projectName = idea.split(' ').slice(0, 5).join(' ');\n}\n\n// Generate URL-safe slug\nconst slug = projectName\n  .toLowerCase()\n  .replace(/[^a-z0-9\\s-]/g, '')\n  .replace(/\\s+/g, '-')\n  .replace(/-+/g, '-')\n  .slice(0, 50)\n  .replace(/^-|-$/g, '')\n  + '-' + Date.now().toString(36);\n\nreturn [{ json: { idea, user_email: userEmail, project_name: projectName, slug, timestamp: new Date().toISOString() } }];"
+      },
+      "id": "intake-validate-02",
+      "name": "Validate and Sanitize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ name: $json.project_name, slug: $json.slug, raw_idea: $json.idea, status: 'intake' }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "intake-create-project-03",
+      "name": "Create Project Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const project = $input.first().json[0];\nconst idea = $('Validate and Sanitize Input').first().json.idea;\n\n// Read product-manager system prompt (embedded as string)\nconst systemPrompt = `You are a senior Product Manager AI. Transform the user's app idea into a complete PRD. Return ONLY a single valid JSON object matching the schema exactly. No markdown, no explanation outside JSON.`;\n\nconst userPrompt = `Create a complete Product Requirements Document for this app idea:\\n\\n\"${idea}\"\\n\\nReturn the JSON structure as specified in your instructions.`;\n\nconst geminiPayload = {\n  contents: [{ role: 'user', parts: [{ text: userPrompt }] }],\n  systemInstruction: { parts: [{ text: systemPrompt }] },\n  generationConfig: {\n    temperature: 0.4,\n    maxOutputTokens: 8192,\n    responseMimeType: 'application/json'\n  }\n};\n\nreturn [{ json: { project_id: project.id, project_slug: project.slug, gemini_payload: geminiPayload, idea } }];"
+      },
+      "id": "intake-build-prd-prompt-04",
+      "name": "Build PRD Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_PRO_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.gemini_payload) }}",
+        "options": {
+          "timeout": 120000,
+          "retry": {
+            "enabled": true,
+            "maxRetries": 3,
+            "waitBetweenTries": 5000
+          }
+        }
+      },
+      "id": "intake-gemini-prd-05",
+      "name": "Gemini: Generate PRD",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const geminiResponse = $input.first().json;\nconst rawText = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\n\nlet prdData;\ntry {\n  prdData = JSON.parse(rawText);\n} catch (e) {\n  // Try to extract JSON from the response\n  const jsonMatch = rawText.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    prdData = JSON.parse(jsonMatch[0]);\n  } else {\n    prdData = { prd: { title: 'Project', tech_stack: {}, user_stories: [], objectives: [], risks: [], roadmap: [] } };\n  }\n}\n\nconst prd = prdData.prd || prdData;\nconst project_id = $('Build PRD Prompt').first().json.project_id;\nconst project_slug = $('Build PRD Prompt').first().json.project_slug;\n\nreturn [{\n  json: {\n    project_id,\n    project_slug,\n    prd_content: rawText,\n    user_stories: prd.user_stories || [],\n    objectives: prd.objectives || [],\n    risks: prd.risks || [],\n    roadmap: prd.roadmap || [],\n    tech_stack: prd.tech_stack || {}\n  }\n}];"
+      },
+      "id": "intake-parse-prd-06",
+      "name": "Parse PRD Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/requirements",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ project_id: $json.project_id, prd_content: $json.prd_content, user_stories: $json.user_stories, objectives: $json.objectives, risks: $json.risks, roadmap: $json.roadmap, tech_stack: $json.tech_stack, is_current: true, version: 1 }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "intake-save-requirements-07",
+      "name": "Save Requirements",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "=eq.{{ $('Parse PRD Response').first().json.project_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ status: 'setup', tech_stack: $('Parse PRD Response').first().json.tech_stack }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "intake-update-status-08",
+      "name": "Update Project Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "02 - Project Setup"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        },
+        "fields": {
+          "values": [
+            {
+              "name": "project_id",
+              "stringValue": "={{ $('Parse PRD Response').first().json.project_id }}"
+            },
+            {
+              "name": "requirements_id",
+              "stringValue": "={{ $('Save Requirements').first().json[0].id }}"
+            },
+            {
+              "name": "slug",
+              "stringValue": "={{ $('Parse PRD Response').first().json.project_slug }}"
+            },
+            {
+              "name": "tech_stack",
+              "stringValue": "={{ JSON.stringify($('Parse PRD Response').first().json.tech_stack) }}"
+            }
+          ]
+        }
+      },
+      "id": "intake-trigger-setup-09",
+      "name": "Trigger Project Setup",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'accepted', project_id: $('Parse PRD Response').first().json.project_id, message: 'Your app is being built! Check back soon.' }) }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "intake-respond-10",
+      "name": "Send 202 Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: parseInt($env.TELEGRAM_ADMIN_CHAT_ID || '0'), text: '\ud83d\ude80 *Proyecto Creado\\!*\\n\\n' + '\ud83d\udccb Idea: ' + ($('Build PRD Prompt').first().json.idea || '').slice(0,80) + '\\n\\n' + '\ud83d\udd18 Estado: intake \u2192 setup\\n' + '\ud83c\udd94 `' + $('Build PRD Prompt').first().json.project_id + '`\\n\\n' + '_El pipeline de 9 agentes iniciar\u00e1 en breve\\._ ', parse_mode: 'MarkdownV2', disable_notification: false }) }}",
+        "options": {
+          "ignore400": true
+        }
+      },
+      "id": "intake-notify-tg-11",
+      "name": "Notify: Project Created",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1340,
+        160
+      ]
+    }
+  ],
+  "connections": {
+    "Receive Idea": {
+      "main": [
+        [
+          {
+            "node": "Validate and Sanitize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and Sanitize Input": {
+      "main": [
+        [
+          {
+            "node": "Create Project Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Project Record": {
+      "main": [
+        [
+          {
+            "node": "Build PRD Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build PRD Prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini: Generate PRD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini: Generate PRD": {
+      "main": [
+        [
+          {
+            "node": "Parse PRD Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse PRD Response": {
+      "main": [
+        [
+          {
+            "node": "Save Requirements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Requirements": {
+      "main": [
+        [
+          {
+            "node": "Update Project Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Project Status": {
+      "main": [
+        [
+          {
+            "node": "Trigger Project Setup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Project Setup": {
+      "main": [
+        [
+          {
+            "node": "Send 202 Accepted",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify: Project Created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [
+    {
+      "name": "factory"
+    }
+  ]
+}

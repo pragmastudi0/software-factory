@@ -1,0 +1,239 @@
+{
+  "name": "11 - Telegram Notifications",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "tg-notif-trigger-01",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Expected input fields:\n// - chat_id: number | number[] | null (null = broadcast to all authorized users)\n// - message: string (Telegram Markdown)\n// - project_id: string | null\n// - event_type: string (project_created | agent_done | build_pass | build_fail | deployed | qa_pass | qa_fail | improvement | error)\n// - approval_type: string | null (deploy | start_development | structural_change | improvement)\n// - entity_id: string | null (UUID of project/deployment/task)\n// - entity_type: string | null\n// - disable_notification: boolean\n\nconst input = $input.first().json;\nconst allowedUsers = ($env.TELEGRAM_ALLOWED_USERS || '').split(',').map(s => parseInt(s.trim())).filter(Boolean);\nconst adminChatId = parseInt($env.TELEGRAM_ADMIN_CHAT_ID || '0');\n\nlet chatIds = [];\nif (input.chat_id) {\n  chatIds = Array.isArray(input.chat_id) ? input.chat_id : [input.chat_id];\n} else {\n  // Broadcast to all authorized users\n  chatIds = allowedUsers.length > 0 ? allowedUsers : (adminChatId ? [adminChatId] : []);\n}\n\nif (chatIds.length === 0) {\n  return [{ json: { skip: true, reason: 'No target chat IDs configured' } }];\n}\n\nconst hasApproval = !!(input.approval_type && input.entity_id);\n\nreturn [{\n  json: {\n    chat_ids: chatIds,\n    message: input.message || '',\n    project_id: input.project_id || null,\n    event_type: input.event_type || 'info',\n    approval_type: input.approval_type || null,\n    entity_id: input.entity_id || null,\n    entity_type: input.entity_type || 'project',\n    has_approval: hasApproval,\n    disable_notification: input.disable_notification || false,\n    context: input.context || {}\n  }\n}];"
+      },
+      "id": "tg-notif-parse-02",
+      "name": "Parse Notification Params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "tg-notif-skip-check-03",
+      "name": "Should Skip?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.has_approval }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "tg-notif-has-approval-04",
+      "name": "Has Approval Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build approval record for each chat_id\nconst params = $input.first().json;\nconst records = [];\n\nfor (const chatId of params.chat_ids) {\n  const callbackBase = `${params.approval_type}:${params.entity_id}:${chatId}:${Date.now()}`;\n  records.push({\n    chat_id: chatId,\n    approval_type: params.approval_type,\n    entity_id: params.entity_id,\n    entity_type: params.entity_type,\n    callback_data: callbackBase,\n    context: params.context,\n    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()\n  });\n}\n\nreturn records.map(r => ({ json: { ...params, approval_record: r, target_chat_id: r.chat_id, callback_base: r.callback_data } }));"
+      },
+      "id": "tg-notif-build-approval-05",
+      "name": "Build Approval Records",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/telegram_approvals",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.approval_record) }}",
+        "options": {}
+      },
+      "id": "tg-notif-create-approval-06",
+      "name": "Create Approval Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 360]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Build Approval Records').first().json;\nconst approvalRow = $input.first().json[0] || {};\nconst chatId = prev.target_chat_id;\nconst callbackBase = prev.callback_base;\n\nconst inlineKeyboard = {\n  inline_keyboard: [\n    [\n      { text: '✅ APROBAR', callback_data: `approve:${callbackBase}` },\n      { text: '❌ RECHAZAR', callback_data: `reject:${callbackBase}` },\n      { text: '⏸ POSPONER', callback_data: `postpone:${callbackBase}` }\n    ]\n  ]\n};\n\nreturn [{\n  json: {\n    ...prev,\n    target_chat_id: chatId,\n    final_message: prev.message,\n    reply_markup: inlineKeyboard,\n    approval_id: approvalRow.id\n  }\n}];"
+      },
+      "id": "tg-notif-build-keyboard-07",
+      "name": "Build Inline Keyboard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 360]
+    },
+    {
+      "parameters": {
+        "jsCode": "// No approval — just map each chat_id to a send target\nconst params = $input.first().json;\nreturn params.chat_ids.map(chatId => ({\n  json: {\n    ...params,\n    target_chat_id: chatId,\n    final_message: params.message,\n    reply_markup: null\n  }\n}));"
+      },
+      "id": "tg-notif-map-chats-08",
+      "name": "Map to Chat IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 560]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.target_chat_id, text: $json.final_message, parse_mode: 'Markdown', disable_notification: $json.disable_notification || false, reply_markup: $json.reply_markup || undefined }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "tg-notif-send-09",
+      "name": "Send Telegram Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sendResult = $input.first().json;\nconst sentMessage = sendResult.body?.result || sendResult.result || {};\nconst params = $('Build Inline Keyboard').first()?.json || $('Map to Chat IDs').first()?.json || {};\n\nreturn [{\n  json: {\n    chat_id: params.target_chat_id,\n    project_id: params.project_id || null,\n    event_type: params.event_type || 'info',\n    message_id: sentMessage.message_id || null,\n    message_text: (params.final_message || '').slice(0, 500)\n  }\n}];"
+      },
+      "id": "tg-notif-prep-log-10",
+      "name": "Prepare Log Entry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/telegram_notification_log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": { "ignore400": true }
+      },
+      "id": "tg-notif-log-11",
+      "name": "Log Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 460]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [{ "node": "Parse Notification Params", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Notification Params": {
+      "main": [
+        [{ "node": "Should Skip?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Should Skip?": {
+      "main": [
+        [],
+        [{ "node": "Has Approval Request?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Has Approval Request?": {
+      "main": [
+        [{ "node": "Build Approval Records", "type": "main", "index": 0 }],
+        [{ "node": "Map to Chat IDs", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Approval Records": {
+      "main": [
+        [{ "node": "Create Approval Record", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Approval Record": {
+      "main": [
+        [{ "node": "Build Inline Keyboard", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Inline Keyboard": {
+      "main": [
+        [{ "node": "Send Telegram Message", "type": "main", "index": 0 }]
+      ]
+    },
+    "Map to Chat IDs": {
+      "main": [
+        [{ "node": "Send Telegram Message", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Telegram Message": {
+      "main": [
+        [{ "node": "Prepare Log Entry", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Log Entry": {
+      "main": [
+        [{ "node": "Log Notification", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

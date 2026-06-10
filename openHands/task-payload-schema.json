@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenHands Task Payload",
+  "description": "Schema for task payloads sent from n8n to OpenHands API (POST /api/conversations)",
+  "type": "object",
+  "required": ["initial_user_message"],
+  "properties": {
+    "initial_user_message": {
+      "type": "string",
+      "description": "The full task prompt including all context, specifications, and step-by-step instructions for the coding agent"
+    },
+    "selected_model": {
+      "type": "string",
+      "default": "gemini/gemini-2.0-flash-exp",
+      "description": "LLM model identifier in LiteLLM format. Use gemini/ prefix for Gemini models, openrouter/ prefix for OpenRouter models.",
+      "examples": [
+        "gemini/gemini-2.0-flash-exp",
+        "gemini/gemini-1.5-pro-latest",
+        "openrouter/google/gemini-2.0-flash-exp:free"
+      ]
+    },
+    "runtime_container_image": {
+      "type": "string",
+      "default": "ghcr.io/all-hands-ai/runtime:main",
+      "description": "Docker image for the OpenHands sandbox execution environment"
+    },
+    "confirmation_mode": {
+      "type": "boolean",
+      "default": false,
+      "description": "Set to false for fully autonomous execution without confirmation prompts. Factory always uses false."
+    },
+    "max_iterations": {
+      "type": "integer",
+      "default": 100,
+      "minimum": 10,
+      "maximum": 500,
+      "description": "Maximum number of agent action iterations before stopping. Increase for complex multi-file tasks."
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "initial_user_message": "Clone the repository at https://github.com/org/project.git, branch develop. Implement all React components according to the architecture specification below. Run npm install && npm run build and fix any errors. Commit with message 'feat: initial implementation' and push.\n\n## Architecture\n...",
+      "selected_model": "gemini/gemini-2.0-flash-exp",
+      "confirmation_mode": false,
+      "max_iterations": 100
+    }
+  ],
+  "$defs": {
+    "ConversationResponse": {
+      "title": "OpenHands Conversation Response",
+      "description": "Shape of the response from GET /api/conversations/{id} — used by n8n polling loop",
+      "type": "object",
+      "properties": {
+        "conversation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["running", "stopped", "error"],
+          "description": "n8n polls until status is 'stopped' or 'error'"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": { "type": "string", "enum": ["user", "agent"] },
+              "content": { "type": "string" },
+              "timestamp": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "properties": {
+            "accumulated_cost": { "type": "number" },
+            "total_tokens": { "type": "integer" }
+          }
+        }
+      }
+    }
+  }
+}

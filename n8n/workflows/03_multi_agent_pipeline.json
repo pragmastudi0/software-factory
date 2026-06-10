@@ -1,0 +1,813 @@
+{
+  "name": "03 - Multi-Agent Pipeline",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "agents-trigger-01",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/requirements",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "=eq.{{ $json.requirements_id }}"
+            },
+            {
+              "name": "select",
+              "value": "*"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "agents-fetch-reqs-02",
+      "name": "Fetch Requirements",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        460,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Helper to build Gemini request payload\nfunction buildGeminiPayload(systemPrompt, userPrompt) {\n  return {\n    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],\n    systemInstruction: { parts: [{ text: systemPrompt }] },\n    generationConfig: { temperature: 0.4, maxOutputTokens: 8192, responseMimeType: 'application/json' }\n  };\n}\n\nconst reqs = $input.first().json[0];\nconst prdSummary = reqs.prd_content.substring(0, 3000); // Truncate for token efficiency\n\nconst pmPayload = buildGeminiPayload(\n  'You are a senior Product Manager. Produce a detailed sprint plan and task breakdown as JSON.',\n  `PRD:\\n${prdSummary}\\n\\nCreate: final task breakdown, sprint plan, acceptance criteria per task.`\n);\n\nreturn [{ json: {\n  requirements: reqs,\n  project_id: $('Execute Workflow Trigger').first().json.project_id,\n  requirements_id: $('Execute Workflow Trigger').first().json.requirements_id,\n  github_repo_name: $('Execute Workflow Trigger').first().json.github_repo_name,\n  github_repo_url: $('Execute Workflow Trigger').first().json.github_repo_url,\n  pm_payload: pmPayload\n} }];"
+      },
+      "id": "agents-prep-pm-03",
+      "name": "Prepare PM Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.pm_payload) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "agents-call-pm-04",
+      "name": "Agent: Product Manager",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        900,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pmResponse = $input.first().json;\nconst pmOutput = pmResponse.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\nconst projectId = $('Prepare PM Request').first().json.project_id;\nconst requirementsId = $('Prepare PM Request').first().json.requirements_id;\nconst reqs = $('Prepare PM Request').first().json.requirements;\n\n// Build architect payload using PM output\nconst architectPayload = {\n  contents: [{ role: 'user', parts: [{ text: `PRD:\\n${reqs.prd_content.substring(0, 2000)}\\n\\nPM Sprint Plan:\\n${pmOutput.substring(0, 2000)}\\n\\nDesign the complete technical architecture.` }] }],\n  systemInstruction: { parts: [{ text: 'You are a senior Software Architect. Produce a complete architecture specification as JSON.' }] },\n  generationConfig: { temperature: 0.3, maxOutputTokens: 8192, responseMimeType: 'application/json' }\n};\n\nreturn [{ json: {\n  ...($('Prepare PM Request').first().json),\n  pm_output: pmOutput,\n  architect_payload: architectPayload\n} }];"
+      },
+      "id": "agents-save-pm-05",
+      "name": "Save PM Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.architect_payload) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "agents-call-architect-06",
+      "name": "Agent: Architect",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1340,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const archResponse = $input.first().json;\nconst archOutput = archResponse.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\nconst context = $('Save PM Output').first().json;\n\nconst baseContext = `PRD Summary:\\n${context.requirements.prd_content.substring(0, 1500)}\\n\\nArchitecture:\\n${archOutput.substring(0, 2000)}`;\n\nfunction buildAgentPayload(role, task) {\n  return {\n    contents: [{ role: 'user', parts: [{ text: `${baseContext}\\n\\n${task}` }] }],\n    systemInstruction: { parts: [{ text: `You are a senior ${role}. Produce complete specifications as JSON.` }] },\n    generationConfig: { temperature: 0.3, maxOutputTokens: 8192, responseMimeType: 'application/json' }\n  };\n}\n\nreturn [{ json: {\n  ...context,\n  architect_output: archOutput,\n  ux_payload: buildAgentPayload('UX/UI Designer', 'Design all pages, components, user flows, and the design system.'),\n  backend_payload: buildAgentPayload('Backend Engineer', 'Design all Supabase Edge Functions, auth flows, and database operations.'),\n  frontend_payload: buildAgentPayload('Frontend Engineer', 'Specify all React components, pages, hooks, and configuration files.'),\n  db_payload: buildAgentPayload('Database Engineer', 'Design all SQL migrations, RLS policies, indexes, and database functions.')\n} }];"
+      },
+      "id": "agents-prep-parallel-07",
+      "name": "Prepare Parallel Agent Requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.ux_payload) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "agents-call-ux-08a",
+      "name": "Agent: UX/UI Designer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1780,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Prepare Parallel Agent Requests').first().json.backend_payload) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "agents-call-backend-08b",
+      "name": "Agent: Backend Engineer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1780,
+        350
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Prepare Parallel Agent Requests').first().json.frontend_payload) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "agents-call-frontend-08c",
+      "name": "Agent: Frontend Engineer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1780,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Prepare Parallel Agent Requests').first().json.db_payload) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "agents-call-db-08d",
+      "name": "Agent: Database Engineer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1780,
+        650
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "waitForAll",
+        "clashHandling": {
+          "values": {
+            "resolveClash": "addSuffix"
+          }
+        }
+      },
+      "id": "agents-merge-09",
+      "name": "Merge Parallel Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2000,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputs = $input.all();\n// Collect all agent outputs\nconst uxOutput = inputs[0]?.json?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\nconst backendOutput = inputs[1]?.json?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\nconst frontendOutput = inputs[2]?.json?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\nconst dbOutput = inputs[3]?.json?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\n\nconst context = $('Prepare Parallel Agent Requests').first().json;\n\nconst combinedContext = `Architecture:\\n${context.architect_output.substring(0, 1500)}\\nBackend:\\n${backendOutput.substring(0, 1000)}\\nFrontend:\\n${frontendOutput.substring(0, 1000)}`;\n\nfunction buildPayload(role, task) {\n  return {\n    contents: [{ role: 'user', parts: [{ text: `${combinedContext}\\n\\n${task}` }] }],\n    systemInstruction: { parts: [{ text: `You are a senior ${role}. Produce complete specifications as JSON.` }] },\n    generationConfig: { temperature: 0.3, maxOutputTokens: 8192, responseMimeType: 'application/json' }\n  };\n}\n\nreturn [{ json: {\n  ...context,\n  ux_output: uxOutput,\n  backend_output: backendOutput,\n  frontend_output: frontendOutput,\n  db_output: dbOutput,\n  qa_payload: buildPayload('QA Engineer', 'Create a complete Playwright test suite covering navigation, auth, CRUD, API, and performance.'),\n  devops_payload: buildPayload('DevOps Engineer', 'Create all deployment configuration for Vercel and GitHub Actions CI.'),\n  security_payload: buildPayload('Security Auditor', 'Audit the architecture for OWASP Top 10 vulnerabilities and produce a security hardening plan.')\n} }];"
+      },
+      "id": "agents-prep-sequential-10",
+      "name": "Prepare Sequential Agent Requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2220,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.qa_payload) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "agents-call-qa-11",
+      "name": "Agent: QA Engineer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Prepare Sequential Agent Requests').first().json.devops_payload) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "agents-call-devops-12",
+      "name": "Agent: DevOps Engineer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2440,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Prepare Sequential Agent Requests').first().json.security_payload) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "agents-call-security-13",
+      "name": "Agent: Security Auditor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2440,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const qaText = $('Agent: QA Engineer').first().json?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\nconst devopsText = $('Agent: DevOps Engineer').first().json?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\nconst securityText = $('Agent: Security Auditor').first().json?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\n\nconst context = $('Prepare Sequential Agent Requests').first().json;\nconst projectId = context.project_id;\nconst requirementsId = context.requirements_id;\n\n// Build task records for each agent\nconst agentOutputs = [\n  { role: 'product_manager', output: context.pm_output },\n  { role: 'architect', output: context.architect_output },\n  { role: 'ux_ui_designer', output: context.ux_output },\n  { role: 'backend_engineer', output: context.backend_output },\n  { role: 'frontend_engineer', output: context.frontend_output },\n  { role: 'database_engineer', output: context.db_output },\n  { role: 'qa_engineer', output: qaText },\n  { role: 'devops_engineer', output: devopsText },\n  { role: 'security_auditor', output: securityText }\n];\n\nreturn agentOutputs.map(a => ({ json: {\n  project_id: projectId,\n  requirement_id: requirementsId,\n  assigned_agent: a.role,\n  title: `${a.role.replace(/_/g, ' ')} analysis`,\n  description: `Automated ${a.role} specification for project`,\n  context: { agent_output_preview: a.output.substring(0, 500) },\n  raw_output: a.output,\n  all_outputs: agentOutputs.reduce((acc, o) => { acc[o.role] = o.output; return acc; }, {}),\n  github_repo_name: context.github_repo_name,\n  github_repo_url: context.github_repo_url\n} }));"
+      },
+      "id": "agents-compile-tasks-14",
+      "name": "Compile All Agent Outputs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2660,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/tasks",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ project_id: $json.project_id, requirement_id: $json.requirement_id, assigned_agent: $json.assigned_agent, title: $json.title, description: $json.description, context: $json.context, status: 'completed' }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "agents-save-tasks-15",
+      "name": "Save Tasks to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2880,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "=eq.{{ $('Compile All Agent Outputs').first().json.project_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ status: 'code_generation' }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "agents-update-status-16",
+      "name": "Update Project Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3100,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "04 - Code Generation"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        },
+        "fields": {
+          "values": [
+            {
+              "name": "project_id",
+              "stringValue": "={{ $('Compile All Agent Outputs').first().json.project_id }}"
+            },
+            {
+              "name": "github_repo_url",
+              "stringValue": "={{ $('Compile All Agent Outputs').first().json.github_repo_url }}"
+            },
+            {
+              "name": "github_repo_name",
+              "stringValue": "={{ $('Compile All Agent Outputs').first().json.github_repo_name }}"
+            },
+            {
+              "name": "all_outputs",
+              "stringValue": "={{ JSON.stringify($('Compile All Agent Outputs').first().json.all_outputs) }}"
+            }
+          ]
+        }
+      },
+      "id": "agents-trigger-codegen-17",
+      "name": "Trigger Code Generation",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        3320,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: parseInt($env.TELEGRAM_ADMIN_CHAT_ID || '0'), text: '\ud83e\udd16 *9 Agentes Completaron An\u00e1lisis*\\n\\n\u2705 Product Manager\\n\u2705 Arquitecto\\n\u2705 UX/UI Designer\\n\u2705 Backend Engineer\\n\u2705 Frontend Engineer\\n\u2705 Database Engineer\\n\u2705 QA Engineer\\n\u2705 DevOps Engineer\\n\u2705 Security Auditor\\n\\n\ud83d\udcbb Iniciando generaci\u00f3n de c\u00f3digo con OpenHands\\.\\.\\.', parse_mode: 'MarkdownV2' }) }}",
+        "options": {
+          "ignore400": true
+        }
+      },
+      "id": "agents-notify-tg-01",
+      "name": "Notify: Agents Complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3000,
+        160
+      ]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Requirements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Requirements": {
+      "main": [
+        [
+          {
+            "node": "Prepare PM Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare PM Request": {
+      "main": [
+        [
+          {
+            "node": "Agent: Product Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: Product Manager": {
+      "main": [
+        [
+          {
+            "node": "Save PM Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save PM Output": {
+      "main": [
+        [
+          {
+            "node": "Agent: Architect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: Architect": {
+      "main": [
+        [
+          {
+            "node": "Prepare Parallel Agent Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Parallel Agent Requests": {
+      "main": [
+        [
+          {
+            "node": "Agent: UX/UI Designer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent: Backend Engineer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent: Frontend Engineer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent: Database Engineer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: UX/UI Designer": {
+      "main": [
+        [
+          {
+            "node": "Merge Parallel Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: Backend Engineer": {
+      "main": [
+        [
+          {
+            "node": "Merge Parallel Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Agent: Frontend Engineer": {
+      "main": [
+        [
+          {
+            "node": "Merge Parallel Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Agent: Database Engineer": {
+      "main": [
+        [
+          {
+            "node": "Merge Parallel Results",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge Parallel Results": {
+      "main": [
+        [
+          {
+            "node": "Prepare Sequential Agent Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Sequential Agent Requests": {
+      "main": [
+        [
+          {
+            "node": "Agent: QA Engineer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent: DevOps Engineer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent: Security Auditor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: QA Engineer": {
+      "main": [
+        [
+          {
+            "node": "Compile All Agent Outputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: DevOps Engineer": {
+      "main": [
+        [
+          {
+            "node": "Compile All Agent Outputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: Security Auditor": {
+      "main": [
+        [
+          {
+            "node": "Compile All Agent Outputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compile All Agent Outputs": {
+      "main": [
+        [
+          {
+            "node": "Save Tasks to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Tasks to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Update Project Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Project Status": {
+      "main": [
+        [
+          {
+            "node": "Trigger Code Generation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify: Agents Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [
+    {
+      "name": "factory"
+    }
+  ]
+}

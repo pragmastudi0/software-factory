@@ -1,0 +1,122 @@
+version: "3.9"
+
+networks:
+  factory-net:
+    driver: bridge
+
+volumes:
+  n8n_data:
+  openhands_workspace:
+  postgres_data:
+
+services:
+
+  # ── PostgreSQL (n8n internal DB — separate from Supabase project DB)
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    networks:
+      - factory-net
+    environment:
+      POSTGRES_USER: ${N8N_DB_POSTGRESDB_USER:-n8n}
+      POSTGRES_PASSWORD: ${N8N_DB_POSTGRESDB_PASSWORD}
+      POSTGRES_DB: ${N8N_DB_POSTGRESDB_DATABASE:-n8n}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${N8N_DB_POSTGRESDB_USER:-n8n}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── n8n Orchestrator
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    networks:
+      - factory-net
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      # Database
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_POSTGRESDB_DATABASE:-n8n}
+      DB_POSTGRESDB_USER: ${N8N_DB_POSTGRESDB_USER:-n8n}
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_POSTGRESDB_PASSWORD}
+      # Authentication
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      # Execution settings — long timeout for code-gen tasks
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: all
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "true"
+      EXECUTIONS_TIMEOUT: 3600
+      EXECUTIONS_TIMEOUT_MAX: 7200
+      # Webhook
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      # General
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      NODE_ENV: production
+      GENERIC_TIMEZONE: UTC
+      N8N_LOG_LEVEL: info
+      N8N_COMMUNITY_PACKAGES_ENABLED: "true"
+      # OpenHands base URL (internal Docker DNS)
+      OPENHANDS_BASE_URL: http://openhands:3000
+      OPENHANDS_API_KEY: ${OPENHANDS_API_KEY}
+      # Pass all factory env vars into n8n for use in workflow expressions
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash-exp}
+      GEMINI_PRO_MODEL: ${GEMINI_PRO_MODEL:-gemini-1.5-pro-latest}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL:-google/gemini-2.0-flash-exp:free}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_ORG: ${GITHUB_ORG}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      VERCEL_TOKEN: ${VERCEL_TOKEN}
+      VERCEL_TEAM_ID: ${VERCEL_TEAM_ID}
+      VERCEL_ORG_ID: ${VERCEL_ORG_ID}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      FACTORY_MAX_CODE_FIX_RETRIES: ${FACTORY_MAX_CODE_FIX_RETRIES:-3}
+      FACTORY_MAX_QA_FIX_RETRIES: ${FACTORY_MAX_QA_FIX_RETRIES:-3}
+      FACTORY_AGENT_TIMEOUT_SECONDS: ${FACTORY_AGENT_TIMEOUT_SECONDS:-300}
+      # Telegram Bot
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS}
+      TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/home/node/workflows-import:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── OpenHands Code Agent
+  openhands:
+    image: ghcr.io/all-hands-ai/openhands:main
+    restart: unless-stopped
+    networks:
+      - factory-net
+    ports:
+      - "${OPENHANDS_PORT:-3000}:3000"
+    environment:
+      SANDBOX_USER_ID: ${SANDBOX_USER_ID:-1000}
+      WORKSPACE_BASE: /opt/workspace
+      LLM_MODEL: ${OPENHANDS_LLM_MODEL:-gemini/gemini-2.0-flash-exp}
+      LLM_API_KEY: ${GEMINI_API_KEY}
+      LLM_BASE_URL: ${OPENHANDS_LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      # Fallback via OpenRouter when Gemini quota is exhausted
+      FALLBACK_LLM_MODEL: ${OPENHANDS_FALLBACK_LLM_MODEL:-openrouter/google/gemini-2.0-flash-exp:free}
+      FALLBACK_LLM_API_KEY: ${OPENROUTER_API_KEY}
+      FALLBACK_LLM_BASE_URL: https://openrouter.ai/api/v1
+    volumes:
+      - openhands_workspace:/opt/workspace
+      # Docker socket mount: OpenHands spawns sandbox containers on the host daemon
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Required for sandbox container spawning
+    privileged: true

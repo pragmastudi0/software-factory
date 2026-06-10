@@ -1,0 +1,646 @@
+{
+  "name": "06 - Deployment",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "deploy-trigger-01",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "=eq.{{ $json.project_id }}"
+            },
+            {
+              "name": "select",
+              "value": "id,slug,vercel_project_id,github_repo_name,current_iteration"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deploy-fetch-project-02",
+      "name": "Fetch Project",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-has-vercel-id",
+              "leftValue": "={{ $json[0].vercel_project_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "deploy-check-existing-03",
+      "name": "Vercel Project Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.vercel.com/v9/projects{{ $env.VERCEL_TEAM_ID ? '?teamId=' + $env.VERCEL_TEAM_ID : '' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.VERCEL_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ name: $('Fetch Project').first().json[0].slug, gitRepository: { repo: $env.GITHUB_ORG + '/' + $('Fetch Project').first().json[0].github_repo_name, type: 'github' }, framework: 'vite', buildCommand: 'npm run build', outputDirectory: 'dist', installCommand: 'npm install', rootDirectory: null }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deploy-create-vercel-project-04",
+      "name": "Vercel: Create Project",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        900,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.vercel.com/v13/deployments{{ $env.VERCEL_TEAM_ID ? '?teamId=' + $env.VERCEL_TEAM_ID : '' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.VERCEL_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ name: $('Fetch Project').first().json[0].slug, gitSource: { type: 'github', repo: $env.GITHUB_ORG + '/' + $('Fetch Project').first().json[0].github_repo_name, ref: 'develop' }, projectSettings: { framework: 'vite', buildCommand: 'npm run build', outputDirectory: 'dist', installCommand: 'npm install' } }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deploy-create-deployment-05",
+      "name": "Vercel: Create Deployment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/deployments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ project_id: $('Execute Workflow Trigger').first().json.project_id, iteration: $('Fetch Project').first().json[0].current_iteration, vercel_deployment_id: $json.id, deployment_url: 'https://' + $json.url, git_branch: 'develop', status: 'building' }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deploy-record-deployment-06",
+      "name": "Record Deployment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "deploy-initial-wait-07",
+      "name": "Initial Wait 30s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.vercel.com/v13/deployments/{{ $('Vercel: Create Deployment').first().json.id }}{{ $env.VERCEL_TEAM_ID ? '?teamId=' + $env.VERCEL_TEAM_ID : '' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.VERCEL_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deploy-poll-vercel-08",
+      "name": "Vercel: Poll Deployment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-ready",
+              "leftValue": "={{ $json.readyState }}",
+              "rightValue": "READY",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "deploy-check-ready-09",
+      "name": "Deployment Ready?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-failed",
+              "leftValue": "={{ $json.readyState }}",
+              "rightValue": "ERROR",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "deploy-check-failed-10",
+      "name": "Deployment Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2220,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 20,
+        "unit": "seconds"
+      },
+      "id": "deploy-poll-wait-11",
+      "name": "Wait 20s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        2440,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/deployments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "vercel_deployment_id",
+              "value": "=eq.{{ $('Vercel: Create Deployment').first().json.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ status: 'deployed', deployment_url: 'https://' + $('Vercel: Poll Deployment').first().json.url, deployed_at: new Date().toISOString() }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deploy-update-success-12",
+      "name": "Update Deployment Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2220,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "=eq.{{ $('Execute Workflow Trigger').first().json.project_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ vercel_deployment_url: 'https://' + $('Vercel: Poll Deployment').first().json.url, status: 'qa' }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deploy-update-project-13",
+      "name": "Update Project with Deploy URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "07 - QA Automation"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        },
+        "fields": {
+          "values": [
+            {
+              "name": "project_id",
+              "stringValue": "={{ $('Execute Workflow Trigger').first().json.project_id }}"
+            },
+            {
+              "name": "deployment_url",
+              "stringValue": "=https://{{ $('Vercel: Poll Deployment').first().json.url }}"
+            },
+            {
+              "name": "github_repo_name",
+              "stringValue": "={{ $('Execute Workflow Trigger').first().json.github_repo_name }}"
+            },
+            {
+              "name": "qa_retry_count",
+              "stringValue": "0"
+            }
+          ]
+        }
+      },
+      "id": "deploy-trigger-qa-14",
+      "name": "Trigger QA Automation",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        2660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: parseInt($env.TELEGRAM_ADMIN_CHAT_ID || '0'), text: '\ud83d\ude80 *Deploy Exitoso\\!*\\n\\n\ud83c\udf10 URL: ' + ($('Update Project with Deploy URL').first().json.deployment_url || $('Vercel: Create Deployment').first().json.url || 'N/A') + '\\n\\nIniciando suite de pruebas QA con Playwright\\.\\.\\.' , parse_mode: 'MarkdownV2' }) }}",
+        "options": {
+          "ignore400": true
+        }
+      },
+      "id": "deploy-notify-success-01",
+      "name": "Notify: Deployed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3200,
+        160
+      ]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Project",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Project": {
+      "main": [
+        [
+          {
+            "node": "Vercel Project Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vercel Project Exists?": {
+      "main": [
+        [
+          {
+            "node": "Vercel: Create Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Vercel: Create Project",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vercel: Create Project": {
+      "main": [
+        [
+          {
+            "node": "Vercel: Create Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vercel: Create Deployment": {
+      "main": [
+        [
+          {
+            "node": "Record Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Deployment": {
+      "main": [
+        [
+          {
+            "node": "Initial Wait 30s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initial Wait 30s": {
+      "main": [
+        [
+          {
+            "node": "Vercel: Poll Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vercel: Poll Deployment": {
+      "main": [
+        [
+          {
+            "node": "Deployment Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deployment Ready?": {
+      "main": [
+        [
+          {
+            "node": "Update Deployment Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Deployment Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deployment Failed?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Wait 20s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 20s": {
+      "main": [
+        [
+          {
+            "node": "Vercel: Poll Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Deployment Success": {
+      "main": [
+        [
+          {
+            "node": "Update Project with Deploy URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Project with Deploy URL": {
+      "main": [
+        [
+          {
+            "node": "Trigger QA Automation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [
+    {
+      "name": "factory"
+    }
+  ]
+}
