@@ -1,28 +1,33 @@
 # Autonomous Software Factory
 
-A fully autonomous AI-powered platform that transforms a natural language app idea into a deployed, tested, production web application — with no human intervention required.
+A fully autonomous AI-powered platform that transforms a natural language app idea into a deployed, tested, production web application — with no human intervention required. **Controlled entirely via Telegram.**
 
 ## Architecture Overview
 
 ```
-User Idea (HTTP POST to /webhook/intake)
+Telegram Bot (primary interface)
+          │
+          ▼
+User Idea / Commands
           │
           ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    n8n Orchestrator (port 5678)                  │
 │                                                                   │
-│  01 Idea Intake ──▶ 02 Project Setup ──▶ 03 Multi-Agent Pipeline │
-│                                                    │              │
-│                                          04 Code Generation       │
-│                                          (OpenHands)              │
-│                                                    │              │
-│                                          05 Validation Loop       │
-│                                                    │              │
-│                                          06 Deployment (Vercel)   │
-│                                                    │              │
-│                                          07 QA Automation         │
-│                                          (Playwright)             │
-│                                                    │              │
+│  00 Telegram Bot ──▶ 01 Idea Intake ──▶ 02 Project Setup        │
+│         ▲                                        │               │
+│         │                              03 Multi-Agent Pipeline   │
+│  11 Notifications                                │               │
+│  (called by all)                       04 Code Generation        │
+│                                        (OpenHands)               │
+│                                                  │               │
+│                                        05 Validation Loop        │
+│                                                  │               │
+│                                        06 Deployment (Vercel)    │
+│                                                  │               │
+│                                        07 QA Automation          │
+│                                        (Playwright)              │
+│                                                  │               │
 │   10 Continuous ◀── 09 Memory System ◀── 08 Feedback Collection  │
 │   Improvement   ──▶ (loop back to 04)                            │
 └─────────────────────────────────────────────────────────────────┘
@@ -48,8 +53,22 @@ User Idea (HTTP POST to /webhook/intake)
 - Docker + Docker Compose v2
 - A VPS or always-on machine (4GB RAM minimum, 8GB recommended)
 - Accounts/API keys for: Google AI Studio, GitHub, Supabase, Vercel, OpenRouter
+- A Telegram Bot (create via [@BotFather](https://t.me/BotFather))
 
-### 2. Setup
+### 2. Create Your Telegram Bot
+
+1. Open Telegram and message [@BotFather](https://t.me/BotFather)
+2. Type `/newbot` and follow the prompts
+3. Copy the token (format: `1234567890:AAxxxxxxxx...`)
+4. Get your chat ID by messaging [@userinfobot](https://t.me/userinfobot)
+5. Set these in your `.env`:
+   ```
+   TELEGRAM_BOT_TOKEN=your_token_here
+   TELEGRAM_ALLOWED_USERS=your_chat_id
+   TELEGRAM_ADMIN_CHAT_ID=your_chat_id
+   ```
+
+### 3. Setup
 
 ```bash
 git clone https://github.com/pragmastudi0/software-factory
@@ -61,42 +80,66 @@ The setup script will:
 - Check prerequisites
 - Create `.env` from `.env.example`
 - Validate all required environment variables
-- Run Supabase database migrations
+- Run Supabase database migrations (including Telegram tables)
 - Start n8n + OpenHands + Postgres via Docker Compose
-- Import and activate all 10 n8n workflows
+- Import and activate all 12 n8n workflows
+- Register the Telegram webhook automatically
 
-### 3. Submit Your First Idea
+### 4. Start Using Telegram
+
+Message your bot on Telegram:
+
+```
+/start
+```
+
+You'll see a welcome message with active projects and all available commands.
+
+```
+/nuevo
+```
+
+Then describe your app idea in plain text — the factory does the rest.
+
+### 5. Available Bot Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome + list active projects |
+| `/nuevo` | Create a new project (prompts for idea) |
+| `/estado` | Current status of a project |
+| `/roadmap` | AI-generated roadmap and tech stack |
+| `/deploy` | Trigger deployment with approval button |
+| `/qa` | Run Playwright test suite |
+| `/errores` | Show recent test failures |
+| `/mejorar` | Request a new feature or improvement |
+| `/feedback` | Submit feedback for the improvement loop |
+| `/costos` | Token usage and estimated API cost |
+| `/agentes` | Recent agent activity log |
+
+### 6. Approval Buttons
+
+When the factory needs your decision, Telegram shows inline buttons:
+
+```
+🚀 Deploy a Producción
+
+📦 Proyecto: CRM Inmobiliario
+🔘 Estado actual: qa
+
+¿Confirmas el despliegue a Vercel?
+
+[✅ APROBAR]  [❌ RECHAZAR]  [⏸ POSPONER]
+```
+
+These appear for: deployments, structural code changes, large refactors.
+
+### 7. Submit via HTTP (alternative)
 
 ```bash
 curl -X POST http://localhost:5678/webhook/intake \
   -H "Content-Type: application/json" \
   -d '{"idea": "A project management tool for freelancers with time tracking and invoice generation"}'
-```
-
-Response:
-```json
-{
-  "status": "accepted",
-  "project_id": "uuid-here",
-  "message": "Your app is being built! Check back soon."
-}
-```
-
-### 4. Monitor Progress
-
-- **n8n Dashboard**: http://localhost:5678 — watch workflows execute in real-time
-- **OpenHands UI**: http://localhost:3000 — watch the AI write code
-- **Supabase Dashboard**: Monitor the `projects` table — `status` field shows current phase
-
-### 5. Provide Feedback (for continuous improvement)
-
-```bash
-curl -X POST http://localhost:5678/webhook/feedback \
-  -H "Content-Type: application/json" \
-  -d '{
-    "project_id": "your-project-uuid",
-    "content": "The time tracking UI is confusing. Can you make the timer button bigger?"
-  }'
 ```
 
 ---
@@ -112,20 +155,22 @@ curl -X POST http://localhost:5678/webhook/feedback \
 
 ---
 
-## The 10-Phase Pipeline
+## The 12-Workflow Pipeline
 
-| Phase | Workflow | What Happens |
-|-------|----------|-------------|
-| 1 | `01_idea_intake` | User idea → Gemini generates full PRD |
+| # | Workflow | What Happens |
+|---|----------|-------------|
+| 0 | `00_telegram_bot` | **Primary UI**: receives all Telegram updates, routes commands, processes approvals |
+| 1 | `01_idea_intake` | User idea → Gemini generates full PRD; notifies Telegram |
 | 2 | `02_project_setup` | GitHub repo + branches + milestones + issues |
-| 3 | `03_multi_agent_pipeline` | 9 specialized AI agents produce complete specs |
-| 4 | `04_code_generation` | OpenHands writes all code and pushes to GitHub |
-| 5 | `05_validation_loop` | Build/lint/typecheck; auto-fix up to 3 times |
-| 6 | `06_deployment` | Vercel deployment with status tracking |
-| 7 | `07_qa_automation` | Playwright E2E tests; auto-fix loop |
+| 3 | `03_multi_agent_pipeline` | 9 specialized AI agents produce complete specs; notifies Telegram |
+| 4 | `04_code_generation` | OpenHands writes all code and pushes to GitHub; notifies Telegram |
+| 5 | `05_validation_loop` | Build/lint/typecheck; auto-fix up to 3 times; notifies pass/fail |
+| 6 | `06_deployment` | Vercel deployment with status tracking; notifies with live URL |
+| 7 | `07_qa_automation` | Playwright E2E tests; auto-fix loop; notifies project live |
 | 8 | `08_feedback_collection` | Collects feedback, analyzes sentiment/priority |
 | 9 | `09_memory_system` | Stores all context for future iterations |
-| 10 | `10_continuous_improvement` | Daily: feedback → plan → code → deploy (infinite) |
+| 10 | `10_continuous_improvement` | Daily: feedback → plan → code → deploy (infinite); notifies Telegram |
+| 11 | `11_telegram_notifications` | **Utility**: called by all workflows to send formatted Telegram messages |
 
 ---
 
@@ -174,8 +219,14 @@ Every app built by the factory uses this exact stack:
 | `feedback` | User + system feedback with sentiment |
 | `memory` | Cross-session key/value context store |
 | `error_patterns` | Auto-fix library (seeded with 6 common errors) |
+| `telegram_conversations` | Per-user bot state machine (idle/awaiting_idea/etc.) |
+| `telegram_approvals` | Approval requests with callback_data, status, expiry |
+| `telegram_notification_log` | Audit trail of all Telegram messages sent |
 
-Migrations: `supabase/migrations/001_initial_schema.sql` + `002_rls_policies.sql`
+Migrations:
+- `supabase/migrations/001_initial_schema.sql` — core schema
+- `supabase/migrations/002_rls_policies.sql` — row level security
+- `supabase/migrations/003_telegram_schema.sql` — Telegram tables
 
 ---
 
@@ -250,6 +301,24 @@ If it's still failing:
 - Switch `GEMINI_PRO_MODEL` from `gemini-1.5-pro-latest` to `gemini-1.5-flash-latest` for PRD generation
 - All agent calls already use `gemini-2.0-flash-exp` (cheaper than Pro)
 - Set `FACTORY_AGENT_TIMEOUT_SECONDS=120` to fail faster on slow responses
+- Use `/costos` in Telegram to monitor token usage in real-time
+
+### Telegram bot not responding
+1. Verify webhook is registered: `curl https://api.telegram.org/bot{TOKEN}/getWebhookInfo`
+2. Check n8n can receive the webhook: `N8N_WEBHOOK_URL` must be publicly accessible (not localhost)
+3. Re-register the webhook: `curl -X POST https://api.telegram.org/bot{TOKEN}/setWebhook -d '{"url":"https://your-n8n/webhook/telegram"}'`
+4. Check `TELEGRAM_ALLOWED_USERS` contains your exact Telegram chat ID (get it from @userinfobot)
+5. Check n8n logs: `docker compose logs n8n | grep telegram`
+
+### Approval buttons not working
+- Buttons expire after 24 hours — request a new approval with `/deploy`
+- Check the `telegram_approvals` table in Supabase for `status` field
+- The approval callback_data format is: `{action}:{type}:{entity_id}:{chat_id}:{timestamp}`
+
+### Telegram messages not arriving
+- Verify `TELEGRAM_ADMIN_CHAT_ID` is set to your correct chat ID
+- Notifications are sent to `TELEGRAM_ADMIN_CHAT_ID` only — add multiple IDs to `TELEGRAM_ALLOWED_USERS` for multi-user access
+- Check the `telegram_notification_log` table in Supabase for recent messages
 
 ---
 
@@ -266,9 +335,10 @@ software-factory/
 ├── supabase/
 │   └── migrations/
 │       ├── 001_initial_schema.sql  # 9 tables, ENUMs, triggers
-│       └── 002_rls_policies.sql    # Row Level Security
+│       ├── 002_rls_policies.sql    # Row Level Security
+│       └── 003_telegram_schema.sql # Telegram conversations, approvals, notification log
 ├── n8n/
-│   ├── workflows/                  # 10 workflow JSON files (01–10)
+│   ├── workflows/                  # 12 workflow JSON files (00–11)
 │   └── credentials/
 │       └── README.md               # Manual credential setup instructions
 ├── agents/                         # 9 agent system prompts (Markdown)

@@ -52,6 +52,9 @@ if [ ! -f .env ]; then
   warn "  • N8N_BASIC_AUTH_PASSWORD"
   warn "  • N8N_DB_POSTGRESDB_PASSWORD"
   warn "  • N8N_WEBHOOK_URL      — Public URL where n8n is accessible"
+  warn "  • TELEGRAM_BOT_TOKEN   — Create bot via @BotFather on Telegram"
+  warn "  • TELEGRAM_ALLOWED_USERS — Comma-separated chat IDs (@userinfobot)"
+  warn "  • TELEGRAM_ADMIN_CHAT_ID — Your Telegram chat ID for notifications"
   warn "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
   read -r -p "Press ENTER after editing .env to continue, or Ctrl+C to abort..." _
@@ -139,6 +142,7 @@ else
   warn "1. Go to: ${SUPABASE_URL//.supabase.co*/}/project/*/sql"
   warn "2. Run: supabase/migrations/001_initial_schema.sql"
   warn "3. Run: supabase/migrations/002_rls_policies.sql"
+  warn "4. Run: supabase/migrations/003_telegram_schema.sql"
   warn "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
   read -r -p "Press ENTER after running migrations to continue, or Ctrl+C to abort..." _
@@ -212,6 +216,26 @@ done
 
 log "Workflows imported: ${IMPORTED}, failed: ${FAILED}."
 
+# ── 9b. Register Telegram webhook
+if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [[ "${TELEGRAM_BOT_TOKEN}" != *"CHANGE_ME"* ]] && [[ "${TELEGRAM_BOT_TOKEN}" != "1234567890:"* ]]; then
+  log "Registering Telegram webhook..."
+  TG_WEBHOOK_URL="${N8N_WEBHOOK_URL%/}/webhook/telegram"
+  TG_REGISTER_RESP=$(curl -s -X POST \
+    "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+    -H "Content-Type: application/json" \
+    -d "{\"url\": \"${TG_WEBHOOK_URL}\", \"allowed_updates\": [\"message\", \"callback_query\"], \"drop_pending_updates\": true}" 2>/dev/null)
+
+  if echo "$TG_REGISTER_RESP" | grep -q '"ok":true'; then
+    log "Telegram webhook registered: ${TG_WEBHOOK_URL}"
+  else
+    warn "Telegram webhook registration failed: ${TG_REGISTER_RESP}"
+    warn "Register manually: https://api.telegram.org/bot\${TELEGRAM_BOT_TOKEN}/setWebhook?url=${TG_WEBHOOK_URL}"
+  fi
+else
+  info "Skipping Telegram webhook registration (TELEGRAM_BOT_TOKEN not configured)."
+  info "Set TELEGRAM_BOT_TOKEN in .env and re-run setup.sh to enable Telegram."
+fi
+
 # ── 10. Wait for OpenHands
 log "Waiting for OpenHands to start..."
 OPENHANDS_PORT="${OPENHANDS_PORT:-3000}"
@@ -248,11 +272,22 @@ echo "    -H 'Content-Type: application/json' \\"
 echo "    -d '{\"idea\": \"A todo app with real-time collaboration and user auth\"}'"
 echo ""
 echo -e "${YELLOW}  Next steps:${NC}"
-echo "  1. Open the n8n dashboard and configure credentials for:"
+echo "  1. Run Supabase migration 003_telegram_schema.sql if not done yet"
+echo "  2. Open the n8n dashboard and configure credentials for:"
 echo "     • GitHub, Supabase, Vercel, Gemini, OpenHands"
-echo "  2. Verify OpenHands is configured with your Gemini API key"
-echo "  3. Submit your first app idea with the curl command above"
+echo "  3. Submit your first app idea — via Telegram or curl"
 echo ""
+if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [[ "${TELEGRAM_BOT_TOKEN}" != *"CHANGE_ME"* ]] && [[ "${TELEGRAM_BOT_TOKEN}" != "1234567890:"* ]]; then
+  echo -e "${GREEN}  Telegram Bot is configured!${NC}"
+  echo "  • Message your bot and type /start to begin"
+  echo "  • Use /nuevo to create your first project from Telegram"
+  echo ""
+else
+  echo -e "${YELLOW}  Telegram not configured — set TELEGRAM_BOT_TOKEN in .env${NC}"
+  echo "  • Create a bot at https://t.me/BotFather"
+  echo "  • Get your chat ID from @userinfobot on Telegram"
+  echo ""
+fi
 echo "  View logs:       docker compose logs -f"
 echo "  Stop services:   docker compose down"
 echo ""

@@ -7,7 +7,10 @@
       "name": "Execute Workflow Trigger",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1,
-      "position": [240, 300]
+      "position": [
+        240,
+        300
+      ]
     },
     {
       "parameters": {
@@ -17,7 +20,10 @@
       "name": "Build Validation Prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [
+        460,
+        300
+      ]
     },
     {
       "parameters": {
@@ -26,20 +32,31 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.validation_payload) }}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "valid-start-conv-03",
       "name": "OpenHands: Start Validation",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [680, 300]
+      "position": [
+        680,
+        300
+      ]
     },
     {
       "parameters": {
@@ -50,7 +67,10 @@
       "name": "Wait 30s",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
-      "position": [900, 300]
+      "position": [
+        900,
+        300
+      ]
     },
     {
       "parameters": {
@@ -59,7 +79,10 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}"
+            }
           ]
         },
         "options": {}
@@ -68,7 +91,10 @@
       "name": "Poll Validation Status",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1120, 300]
+      "position": [
+        1120,
+        300
+      ]
     },
     {
       "parameters": {
@@ -78,13 +104,19 @@
               "id": "cond-done",
               "leftValue": "={{ $json.status }}",
               "rightValue": "stopped",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             },
             {
               "id": "cond-error",
               "leftValue": "={{ $json.status }}",
               "rightValue": "error",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "or"
@@ -94,7 +126,10 @@
       "name": "Validation Complete?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1340, 300]
+      "position": [
+        1340,
+        300
+      ]
     },
     {
       "parameters": {
@@ -105,7 +140,10 @@
       "name": "Poll Wait 20s",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
-      "position": [1560, 400]
+      "position": [
+        1560,
+        400
+      ]
     },
     {
       "parameters": {
@@ -115,7 +153,10 @@
       "name": "Parse Validation Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1560, 200]
+      "position": [
+        1560,
+        200
+      ]
     },
     {
       "parameters": {
@@ -125,7 +166,10 @@
               "id": "cond-passed",
               "leftValue": "={{ $json.validation_passed }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "equals" }
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
@@ -135,7 +179,10 @@
       "name": "Build Passed?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1780, 200]
+      "position": [
+        1780,
+        200
+      ]
     },
     {
       "parameters": {
@@ -145,7 +192,10 @@
               "id": "cond-retries",
               "leftValue": "={{ $json.retry_count }}",
               "rightValue": "={{ parseInt($env.FACTORY_MAX_CODE_FIX_RETRIES) || 3 }}",
-              "operator": { "type": "number", "operation": "gte" }
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
             }
           ],
           "combinator": "and"
@@ -155,7 +205,10 @@
       "name": "Retries Exhausted?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2000, 300]
+      "position": [
+        2000,
+        300
+      ]
     },
     {
       "parameters": {
@@ -164,15 +217,27 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "order", "value": "success_count.desc" },
-            { "name": "limit", "value": "10" }
+            {
+              "name": "order",
+              "value": "success_count.desc"
+            },
+            {
+              "name": "limit",
+              "value": "10"
+            }
           ]
         },
         "options": {}
@@ -181,7 +246,10 @@
       "name": "Fetch Error Patterns",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2220, 400]
+      "position": [
+        2220,
+        400
+      ]
     },
     {
       "parameters": {
@@ -191,7 +259,10 @@
       "name": "Build Fix Prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2440, 400]
+      "position": [
+        2440,
+        400
+      ]
     },
     {
       "parameters": {
@@ -200,20 +271,31 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.fix_payload) }}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "valid-start-fix-13",
       "name": "OpenHands: Fix Errors",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2660, 400]
+      "position": [
+        2660,
+        400
+      ]
     },
     {
       "parameters": {
@@ -224,19 +306,43 @@
       "name": "Wait for Fix 90s",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
-      "position": [2880, 400]
+      "position": [
+        2880,
+        400
+      ]
     },
     {
       "parameters": {
-        "workflowId": { "__rl": true, "mode": "name", "value": "05 - Validation Loop" },
-        "options": { "waitForSubWorkflow": false },
+        "workflowId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "05 - Validation Loop"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        },
         "fields": {
           "values": [
-            { "name": "project_id", "stringValue": "={{ $('Build Fix Prompt').first().json.project_id }}" },
-            { "name": "github_repo_url", "stringValue": "={{ $('Build Fix Prompt').first().json.github_repo_url }}" },
-            { "name": "github_repo_name", "stringValue": "={{ $('Build Fix Prompt').first().json.github_repo_name }}" },
-            { "name": "branch", "stringValue": "={{ $('Build Fix Prompt').first().json.branch }}" },
-            { "name": "retry_count", "stringValue": "={{ $('Build Fix Prompt').first().json.retry_count }}" }
+            {
+              "name": "project_id",
+              "stringValue": "={{ $('Build Fix Prompt').first().json.project_id }}"
+            },
+            {
+              "name": "github_repo_url",
+              "stringValue": "={{ $('Build Fix Prompt').first().json.github_repo_url }}"
+            },
+            {
+              "name": "github_repo_name",
+              "stringValue": "={{ $('Build Fix Prompt').first().json.github_repo_name }}"
+            },
+            {
+              "name": "branch",
+              "stringValue": "={{ $('Build Fix Prompt').first().json.branch }}"
+            },
+            {
+              "name": "retry_count",
+              "stringValue": "={{ $('Build Fix Prompt').first().json.retry_count }}"
+            }
           ]
         }
       },
@@ -244,7 +350,10 @@
       "name": "Re-run Validation",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [3100, 400]
+      "position": [
+        3100,
+        400
+      ]
     },
     {
       "parameters": {
@@ -253,21 +362,36 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id", "value": "=eq.{{ $json.project_id }}" }
+            {
+              "name": "id",
+              "value": "=eq.{{ $json.project_id }}"
+            }
           ]
         },
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
-            { "name": "", "value": "={{ JSON.stringify({ status: 'failed' }) }}" }
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ status: 'failed' }) }}"
+            }
           ]
         },
         "options": {}
@@ -276,17 +400,35 @@
       "name": "Mark Project Failed",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2220, 200]
+      "position": [
+        2220,
+        200
+      ]
     },
     {
       "parameters": {
-        "workflowId": { "__rl": true, "mode": "name", "value": "06 - Deployment" },
-        "options": { "waitForSubWorkflow": false },
+        "workflowId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "06 - Deployment"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        },
         "fields": {
           "values": [
-            { "name": "project_id", "stringValue": "={{ $json.project_id }}" },
-            { "name": "github_repo_url", "stringValue": "={{ $json.github_repo_url }}" },
-            { "name": "github_repo_name", "stringValue": "={{ $json.github_repo_name }}" }
+            {
+              "name": "project_id",
+              "stringValue": "={{ $json.project_id }}"
+            },
+            {
+              "name": "github_repo_url",
+              "stringValue": "={{ $json.github_repo_url }}"
+            },
+            {
+              "name": "github_repo_name",
+              "stringValue": "={{ $json.github_repo_name }}"
+            }
           ]
         }
       },
@@ -294,60 +436,256 @@
       "name": "Trigger Deployment",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [2000, 100]
+      "position": [
+        2000,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: parseInt($env.TELEGRAM_ADMIN_CHAT_ID || '0'), text: '\u2705 *Validaci\u00f3n Exitosa\\!*\\n\\nlint \\+ typecheck \\+ build pasaron\\. Iniciando deployment a Vercel\\.\\.\\.' , parse_mode: 'MarkdownV2' }) }}",
+        "options": {
+          "ignore400": true
+        }
+      },
+      "id": "validation-notify-pass-01",
+      "name": "Notify: Build Passed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3000,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: parseInt($env.TELEGRAM_ADMIN_CHAT_ID || '0'), text: '\u274c *Validaci\u00f3n Fallida*\\n\\nSe agotaron los reintentos de correcci\u00f3n autom\u00e1tica\\. Proyecto marcado como `failed`\\. Revisa los logs en n8n y corrige manualmente o ajusta los patrones de error\\.', parse_mode: 'MarkdownV2' }) }}",
+        "options": {
+          "ignore400": true
+        }
+      },
+      "id": "validation-notify-fail-01",
+      "name": "Notify: Build Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3000,
+        360
+      ]
     }
   ],
   "connections": {
     "Execute Workflow Trigger": {
-      "main": [[{ "node": "Build Validation Prompt", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Validation Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Validation Prompt": {
-      "main": [[{ "node": "OpenHands: Start Validation", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "OpenHands: Start Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "OpenHands: Start Validation": {
-      "main": [[{ "node": "Wait 30s", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Wait 30s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Wait 30s": {
-      "main": [[{ "node": "Poll Validation Status", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Poll Validation Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Poll Validation Status": {
-      "main": [[{ "node": "Validation Complete?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Validation Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Validation Complete?": {
       "main": [
-        [{ "node": "Parse Validation Result", "type": "main", "index": 0 }],
-        [{ "node": "Poll Wait 20s", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Parse Validation Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Poll Wait 20s",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Poll Wait 20s": {
-      "main": [[{ "node": "Poll Validation Status", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Poll Validation Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse Validation Result": {
-      "main": [[{ "node": "Build Passed?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Passed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Passed?": {
       "main": [
-        [{ "node": "Trigger Deployment", "type": "main", "index": 0 }],
-        [{ "node": "Retries Exhausted?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Trigger Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retries Exhausted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Retries Exhausted?": {
       "main": [
-        [{ "node": "Mark Project Failed", "type": "main", "index": 0 }],
-        [{ "node": "Fetch Error Patterns", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Mark Project Failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Error Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Fetch Error Patterns": {
-      "main": [[{ "node": "Build Fix Prompt", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Fix Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Fix Prompt": {
-      "main": [[{ "node": "OpenHands: Fix Errors", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "OpenHands: Fix Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "OpenHands: Fix Errors": {
-      "main": [[{ "node": "Wait for Fix 90s", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Wait for Fix 90s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Wait for Fix 90s": {
-      "main": [[{ "node": "Re-run Validation", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Re-run Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Project Failed": {
+      "main": [
+        [
+          {
+            "node": "Notify: Build Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -356,5 +694,9 @@
     "saveManualExecutions": true,
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "tags": [{ "name": "factory" }]
+  "tags": [
+    {
+      "name": "factory"
+    }
+  ]
 }

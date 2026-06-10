@@ -7,19 +7,30 @@
       "name": "Execute Workflow Trigger",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1,
-      "position": [240, 200]
+      "position": [
+        240,
+        200
+      ]
     },
     {
       "parameters": {
         "rule": {
-          "interval": [{ "field": "cronExpression", "expression": "0 2 * * *" }]
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * *"
+            }
+          ]
         }
       },
       "id": "improve-cron-trigger-02",
       "name": "Daily Cron 02:00 UTC",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1,
-      "position": [240, 400]
+      "position": [
+        240,
+        400
+      ]
     },
     {
       "parameters": {
@@ -28,15 +39,27 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "status", "value": "=in.(live,improving)" },
-            { "name": "select", "value": "id,slug,github_repo_url,github_repo_name,vercel_deployment_url,current_iteration" }
+            {
+              "name": "status",
+              "value": "=in.(live,improving)"
+            },
+            {
+              "name": "select",
+              "value": "id,slug,github_repo_url,github_repo_name,vercel_deployment_url,current_iteration"
+            }
           ]
         },
         "options": {}
@@ -45,7 +68,10 @@
       "name": "Fetch Live Projects",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [460, 300]
+      "position": [
+        460,
+        300
+      ]
     },
     {
       "parameters": {
@@ -56,7 +82,10 @@
       "name": "Process Each Project",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
-      "position": [680, 300]
+      "position": [
+        680,
+        300
+      ]
     },
     {
       "parameters": {
@@ -65,17 +94,35 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "project_id", "value": "=eq.{{ $json.id }}" },
-            { "name": "status", "value": "=eq.new" },
-            { "name": "order", "value": "priority.desc,created_at.desc" },
-            { "name": "limit", "value": "20" }
+            {
+              "name": "project_id",
+              "value": "=eq.{{ $json.id }}"
+            },
+            {
+              "name": "status",
+              "value": "=eq.new"
+            },
+            {
+              "name": "order",
+              "value": "priority.desc,created_at.desc"
+            },
+            {
+              "name": "limit",
+              "value": "20"
+            }
           ]
         },
         "options": {}
@@ -84,7 +131,10 @@
       "name": "Fetch Unresolved Feedback",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [900, 300]
+      "position": [
+        900,
+        300
+      ]
     },
     {
       "parameters": {
@@ -94,7 +144,10 @@
               "id": "cond-has-feedback",
               "leftValue": "={{ $json.length }}",
               "rightValue": 0,
-              "operator": { "type": "number", "operation": "gt" }
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
             }
           ],
           "combinator": "and"
@@ -104,7 +157,10 @@
       "name": "Has Feedback to Act On?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1120, 300]
+      "position": [
+        1120,
+        300
+      ]
     },
     {
       "parameters": {
@@ -113,17 +169,35 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "project_id", "value": "=eq.{{ $('Process Each Project').item.json.id }}" },
-            { "name": "importance", "value": "=gte.5" },
-            { "name": "order", "value": "importance.desc" },
-            { "name": "limit", "value": "10" }
+            {
+              "name": "project_id",
+              "value": "=eq.{{ $('Process Each Project').item.json.id }}"
+            },
+            {
+              "name": "importance",
+              "value": "=gte.5"
+            },
+            {
+              "name": "order",
+              "value": "importance.desc"
+            },
+            {
+              "name": "limit",
+              "value": "10"
+            }
           ]
         },
         "options": {}
@@ -132,7 +206,10 @@
       "name": "Fetch Project Memory",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1340, 200]
+      "position": [
+        1340,
+        200
+      ]
     },
     {
       "parameters": {
@@ -142,7 +219,10 @@
       "name": "Build Improvement Plan Prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1560, 200]
+      "position": [
+        1560,
+        200
+      ]
     },
     {
       "parameters": {
@@ -150,18 +230,28 @@
         "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.plan_payload) }}",
-        "options": { "timeout": 60000 }
+        "options": {
+          "timeout": 60000
+        }
       },
       "id": "improve-call-gemini-09",
       "name": "Gemini: Plan Improvements",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1780, 200]
+      "position": [
+        1780,
+        200
+      ]
     },
     {
       "parameters": {
@@ -171,7 +261,10 @@
       "name": "Parse Improvement Tasks",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2000, 200]
+      "position": [
+        2000,
+        200
+      ]
     },
     {
       "parameters": {
@@ -180,9 +273,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.GITHUB_TOKEN }}" },
-            { "name": "Accept", "value": "application/vnd.github+json" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
@@ -190,7 +292,7 @@
           "parameters": [
             {
               "name": "",
-              "value": "={{ JSON.stringify({ title: $json.task_title, body: $json.task_description + '\\n\\n_Generated by Autonomous Software Factory — Iteration ' + $json.new_iteration + '_', labels: [$json.task_label, 'iteration-' + $json.new_iteration, 'auto-generated'] }) }}"
+              "value": "={{ JSON.stringify({ title: $json.task_title, body: $json.task_description + '\\n\\n_Generated by Autonomous Software Factory \u2014 Iteration ' + $json.new_iteration + '_', labels: [$json.task_label, 'iteration-' + $json.new_iteration, 'auto-generated'] }) }}"
             }
           ]
         },
@@ -200,7 +302,10 @@
       "name": "GitHub: Create Issues",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2220, 200]
+      "position": [
+        2220,
+        200
+      ]
     },
     {
       "parameters": {
@@ -209,21 +314,36 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id", "value": "=eq.{{ $json.project_id }}" }
+            {
+              "name": "id",
+              "value": "=eq.{{ $json.project_id }}"
+            }
           ]
         },
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
-            { "name": "", "value": "={{ JSON.stringify({ current_iteration: $json.new_iteration, status: 'improving' }) }}" }
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ current_iteration: $json.new_iteration, status: 'improving' }) }}"
+            }
           ]
         },
         "options": {}
@@ -232,7 +352,10 @@
       "name": "Increment Project Iteration",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2440, 200]
+      "position": [
+        2440,
+        200
+      ]
     },
     {
       "parameters": {
@@ -241,21 +364,36 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id", "value": "=in.({{ $json.feedback_ids.join(',') }})" }
+            {
+              "name": "id",
+              "value": "=in.({{ $json.feedback_ids.join(',') }})"
+            }
           ]
         },
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
-            { "name": "", "value": "={{ JSON.stringify({ status: 'triaged' }) }}" }
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ status: 'triaged' }) }}"
+            }
           ]
         },
         "options": {}
@@ -264,18 +402,39 @@
       "name": "Mark Feedback Triaged",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2660, 200]
+      "position": [
+        2660,
+        200
+      ]
     },
     {
       "parameters": {
-        "workflowId": { "__rl": true, "mode": "name", "value": "04 - Code Generation" },
-        "options": { "waitForSubWorkflow": false },
+        "workflowId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "04 - Code Generation"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        },
         "fields": {
           "values": [
-            { "name": "project_id", "stringValue": "={{ $json.project_id }}" },
-            { "name": "github_repo_url", "stringValue": "={{ $json.github_repo_url }}" },
-            { "name": "github_repo_name", "stringValue": "={{ $json.github_repo_name }}" },
-            { "name": "all_outputs", "stringValue": "={}" }
+            {
+              "name": "project_id",
+              "stringValue": "={{ $json.project_id }}"
+            },
+            {
+              "name": "github_repo_url",
+              "stringValue": "={{ $json.github_repo_url }}"
+            },
+            {
+              "name": "github_repo_name",
+              "stringValue": "={{ $json.github_repo_name }}"
+            },
+            {
+              "name": "all_outputs",
+              "stringValue": "={}"
+            }
           ]
         }
       },
@@ -283,51 +442,190 @@
       "name": "Trigger Code Generation",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [2880, 200]
+      "position": [
+        2880,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: parseInt($env.TELEGRAM_ADMIN_CHAT_ID || '0'), text: '\ud83d\udd04 *Ciclo de Mejora Continua*\\n\\nAnalizando feedback y planificando mejoras\\. Las tareas han sido creadas en GitHub y se iniciar\u00e1 generaci\u00f3n de c\u00f3digo autom\u00e1ticamente\\.', parse_mode: 'MarkdownV2' }) }}",
+        "options": {
+          "ignore400": true
+        }
+      },
+      "id": "improve-notify-tg-01",
+      "name": "Notify: Improvement Cycle",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3000,
+        160
+      ]
     }
   ],
   "connections": {
     "Execute Workflow Trigger": {
-      "main": [[{ "node": "Fetch Live Projects", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Fetch Live Projects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Daily Cron 02:00 UTC": {
-      "main": [[{ "node": "Fetch Live Projects", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Fetch Live Projects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Fetch Live Projects": {
-      "main": [[{ "node": "Process Each Project", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Process Each Project",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Process Each Project": {
-      "main": [[{ "node": "Fetch Unresolved Feedback", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Fetch Unresolved Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Fetch Unresolved Feedback": {
-      "main": [[{ "node": "Has Feedback to Act On?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Has Feedback to Act On?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Has Feedback to Act On?": {
       "main": [
-        [{ "node": "Fetch Project Memory", "type": "main", "index": 0 }],
+        [
+          {
+            "node": "Fetch Project Memory",
+            "type": "main",
+            "index": 0
+          }
+        ],
         []
       ]
     },
     "Fetch Project Memory": {
-      "main": [[{ "node": "Build Improvement Plan Prompt", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Improvement Plan Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Improvement Plan Prompt": {
-      "main": [[{ "node": "Gemini: Plan Improvements", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Gemini: Plan Improvements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Gemini: Plan Improvements": {
-      "main": [[{ "node": "Parse Improvement Tasks", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Parse Improvement Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse Improvement Tasks": {
-      "main": [[{ "node": "GitHub: Create Issues", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "GitHub: Create Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "GitHub: Create Issues": {
-      "main": [[{ "node": "Increment Project Iteration", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Increment Project Iteration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Increment Project Iteration": {
-      "main": [[{ "node": "Mark Feedback Triaged", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Mark Feedback Triaged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Mark Feedback Triaged": {
-      "main": [[{ "node": "Trigger Code Generation", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Trigger Code Generation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify: Improvement Cycle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -336,5 +634,9 @@
     "saveManualExecutions": true,
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "tags": [{ "name": "factory" }]
+  "tags": [
+    {
+      "name": "factory"
+    }
+  ]
 }

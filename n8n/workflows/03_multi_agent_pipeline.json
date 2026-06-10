@@ -7,7 +7,10 @@
       "name": "Execute Workflow Trigger",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1,
-      "position": [240, 400]
+      "position": [
+        240,
+        400
+      ]
     },
     {
       "parameters": {
@@ -16,15 +19,27 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id", "value": "=eq.{{ $json.requirements_id }}" },
-            { "name": "select", "value": "*" }
+            {
+              "name": "id",
+              "value": "=eq.{{ $json.requirements_id }}"
+            },
+            {
+              "name": "select",
+              "value": "*"
+            }
           ]
         },
         "options": {}
@@ -33,7 +48,10 @@
       "name": "Fetch Requirements",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [460, 400]
+      "position": [
+        460,
+        400
+      ]
     },
     {
       "parameters": {
@@ -43,7 +61,10 @@
       "name": "Prepare PM Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [680, 400]
+      "position": [
+        680,
+        400
+      ]
     },
     {
       "parameters": {
@@ -51,18 +72,28 @@
         "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.pm_payload) }}",
-        "options": { "timeout": 120000 }
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "agents-call-pm-04",
       "name": "Agent: Product Manager",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [900, 400]
+      "position": [
+        900,
+        400
+      ]
     },
     {
       "parameters": {
@@ -72,7 +103,10 @@
       "name": "Save PM Output",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 400]
+      "position": [
+        1120,
+        400
+      ]
     },
     {
       "parameters": {
@@ -80,18 +114,28 @@
         "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.architect_payload) }}",
-        "options": { "timeout": 120000 }
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "agents-call-architect-06",
       "name": "Agent: Architect",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1340, 400]
+      "position": [
+        1340,
+        400
+      ]
     },
     {
       "parameters": {
@@ -101,86 +145,136 @@
       "name": "Prepare Parallel Agent Requests",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1560, 400]
+      "position": [
+        1560,
+        400
+      ]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
         "sendHeaders": true,
-        "headerParameters": [{ "name": "Content-Type", "value": "application/json" }],
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.ux_payload) }}",
-        "options": { "timeout": 120000 }
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "agents-call-ux-08a",
       "name": "Agent: UX/UI Designer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1780, 200]
+      "position": [
+        1780,
+        200
+      ]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
         "sendHeaders": true,
-        "headerParameters": [{ "name": "Content-Type", "value": "application/json" }],
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($('Prepare Parallel Agent Requests').first().json.backend_payload) }}",
-        "options": { "timeout": 120000 }
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "agents-call-backend-08b",
       "name": "Agent: Backend Engineer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1780, 350]
+      "position": [
+        1780,
+        350
+      ]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
         "sendHeaders": true,
-        "headerParameters": [{ "name": "Content-Type", "value": "application/json" }],
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($('Prepare Parallel Agent Requests').first().json.frontend_payload) }}",
-        "options": { "timeout": 120000 }
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "agents-call-frontend-08c",
       "name": "Agent: Frontend Engineer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1780, 500]
+      "position": [
+        1780,
+        500
+      ]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
         "sendHeaders": true,
-        "headerParameters": [{ "name": "Content-Type", "value": "application/json" }],
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($('Prepare Parallel Agent Requests').first().json.db_payload) }}",
-        "options": { "timeout": 120000 }
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "agents-call-db-08d",
       "name": "Agent: Database Engineer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1780, 650]
+      "position": [
+        1780,
+        650
+      ]
     },
     {
       "parameters": {
         "mode": "waitForAll",
-        "clashHandling": { "values": { "resolveClash": "addSuffix" } }
+        "clashHandling": {
+          "values": {
+            "resolveClash": "addSuffix"
+          }
+        }
       },
       "id": "agents-merge-09",
       "name": "Merge Parallel Results",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [2000, 420]
+      "position": [
+        2000,
+        420
+      ]
     },
     {
       "parameters": {
@@ -190,58 +284,91 @@
       "name": "Prepare Sequential Agent Requests",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2220, 420]
+      "position": [
+        2220,
+        420
+      ]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
         "sendHeaders": true,
-        "headerParameters": [{ "name": "Content-Type", "value": "application/json" }],
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.qa_payload) }}",
-        "options": { "timeout": 120000 }
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "agents-call-qa-11",
       "name": "Agent: QA Engineer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2440, 300]
+      "position": [
+        2440,
+        300
+      ]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
         "sendHeaders": true,
-        "headerParameters": [{ "name": "Content-Type", "value": "application/json" }],
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($('Prepare Sequential Agent Requests').first().json.devops_payload) }}",
-        "options": { "timeout": 120000 }
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "agents-call-devops-12",
       "name": "Agent: DevOps Engineer",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2440, 450]
+      "position": [
+        2440,
+        450
+      ]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
         "sendHeaders": true,
-        "headerParameters": [{ "name": "Content-Type", "value": "application/json" }],
+        "headerParameters": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($('Prepare Sequential Agent Requests').first().json.security_payload) }}",
-        "options": { "timeout": 120000 }
+        "options": {
+          "timeout": 120000
+        }
       },
       "id": "agents-call-security-13",
       "name": "Agent: Security Auditor",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2440, 600]
+      "position": [
+        2440,
+        600
+      ]
     },
     {
       "parameters": {
@@ -251,7 +378,10 @@
       "name": "Compile All Agent Outputs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2660, 450]
+      "position": [
+        2660,
+        450
+      ]
     },
     {
       "parameters": {
@@ -260,10 +390,22 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "Prefer", "value": "return=representation" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
           ]
         },
         "sendBody": true,
@@ -281,7 +423,10 @@
       "name": "Save Tasks to Supabase",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2880, 450]
+      "position": [
+        2880,
+        450
+      ]
     },
     {
       "parameters": {
@@ -290,21 +435,36 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id", "value": "=eq.{{ $('Compile All Agent Outputs').first().json.project_id }}" }
+            {
+              "name": "id",
+              "value": "=eq.{{ $('Compile All Agent Outputs').first().json.project_id }}"
+            }
           ]
         },
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
-            { "name": "", "value": "={{ JSON.stringify({ status: 'code_generation' }) }}" }
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ status: 'code_generation' }) }}"
+            }
           ]
         },
         "options": {}
@@ -313,18 +473,39 @@
       "name": "Update Project Status",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [3100, 450]
+      "position": [
+        3100,
+        450
+      ]
     },
     {
       "parameters": {
-        "workflowId": { "__rl": true, "mode": "name", "value": "04 - Code Generation" },
-        "options": { "waitForSubWorkflow": false },
+        "workflowId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "04 - Code Generation"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        },
         "fields": {
           "values": [
-            { "name": "project_id", "stringValue": "={{ $('Compile All Agent Outputs').first().json.project_id }}" },
-            { "name": "github_repo_url", "stringValue": "={{ $('Compile All Agent Outputs').first().json.github_repo_url }}" },
-            { "name": "github_repo_name", "stringValue": "={{ $('Compile All Agent Outputs').first().json.github_repo_name }}" },
-            { "name": "all_outputs", "stringValue": "={{ JSON.stringify($('Compile All Agent Outputs').first().json.all_outputs) }}" }
+            {
+              "name": "project_id",
+              "stringValue": "={{ $('Compile All Agent Outputs').first().json.project_id }}"
+            },
+            {
+              "name": "github_repo_url",
+              "stringValue": "={{ $('Compile All Agent Outputs').first().json.github_repo_url }}"
+            },
+            {
+              "name": "github_repo_name",
+              "stringValue": "={{ $('Compile All Agent Outputs').first().json.github_repo_name }}"
+            },
+            {
+              "name": "all_outputs",
+              "stringValue": "={{ JSON.stringify($('Compile All Agent Outputs').first().json.all_outputs) }}"
+            }
           ]
         }
       },
@@ -332,75 +513,290 @@
       "name": "Trigger Code Generation",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [3320, 450]
+      "position": [
+        3320,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: parseInt($env.TELEGRAM_ADMIN_CHAT_ID || '0'), text: '\ud83e\udd16 *9 Agentes Completaron An\u00e1lisis*\\n\\n\u2705 Product Manager\\n\u2705 Arquitecto\\n\u2705 UX/UI Designer\\n\u2705 Backend Engineer\\n\u2705 Frontend Engineer\\n\u2705 Database Engineer\\n\u2705 QA Engineer\\n\u2705 DevOps Engineer\\n\u2705 Security Auditor\\n\\n\ud83d\udcbb Iniciando generaci\u00f3n de c\u00f3digo con OpenHands\\.\\.\\.', parse_mode: 'MarkdownV2' }) }}",
+        "options": {
+          "ignore400": true
+        }
+      },
+      "id": "agents-notify-tg-01",
+      "name": "Notify: Agents Complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3000,
+        160
+      ]
     }
   ],
   "connections": {
     "Execute Workflow Trigger": {
-      "main": [[{ "node": "Fetch Requirements", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Fetch Requirements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Fetch Requirements": {
-      "main": [[{ "node": "Prepare PM Request", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare PM Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare PM Request": {
-      "main": [[{ "node": "Agent: Product Manager", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Agent: Product Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Agent: Product Manager": {
-      "main": [[{ "node": "Save PM Output", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Save PM Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Save PM Output": {
-      "main": [[{ "node": "Agent: Architect", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Agent: Architect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Agent: Architect": {
-      "main": [[{ "node": "Prepare Parallel Agent Requests", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Parallel Agent Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Parallel Agent Requests": {
       "main": [
-        [{ "node": "Agent: UX/UI Designer", "type": "main", "index": 0 }],
-        [{ "node": "Agent: Backend Engineer", "type": "main", "index": 0 }],
-        [{ "node": "Agent: Frontend Engineer", "type": "main", "index": 0 }],
-        [{ "node": "Agent: Database Engineer", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Agent: UX/UI Designer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent: Backend Engineer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent: Frontend Engineer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent: Database Engineer",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Agent: UX/UI Designer": {
-      "main": [[{ "node": "Merge Parallel Results", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Merge Parallel Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Agent: Backend Engineer": {
-      "main": [[{ "node": "Merge Parallel Results", "type": "main", "index": 1 }]]
+      "main": [
+        [
+          {
+            "node": "Merge Parallel Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
     },
     "Agent: Frontend Engineer": {
-      "main": [[{ "node": "Merge Parallel Results", "type": "main", "index": 2 }]]
+      "main": [
+        [
+          {
+            "node": "Merge Parallel Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
     },
     "Agent: Database Engineer": {
-      "main": [[{ "node": "Merge Parallel Results", "type": "main", "index": 3 }]]
+      "main": [
+        [
+          {
+            "node": "Merge Parallel Results",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
     },
     "Merge Parallel Results": {
-      "main": [[{ "node": "Prepare Sequential Agent Requests", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Sequential Agent Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Sequential Agent Requests": {
       "main": [
-        [{ "node": "Agent: QA Engineer", "type": "main", "index": 0 }],
-        [{ "node": "Agent: DevOps Engineer", "type": "main", "index": 0 }],
-        [{ "node": "Agent: Security Auditor", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Agent: QA Engineer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent: DevOps Engineer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent: Security Auditor",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Agent: QA Engineer": {
-      "main": [[{ "node": "Compile All Agent Outputs", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Compile All Agent Outputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Agent: DevOps Engineer": {
-      "main": [[{ "node": "Compile All Agent Outputs", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Compile All Agent Outputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Agent: Security Auditor": {
-      "main": [[{ "node": "Compile All Agent Outputs", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Compile All Agent Outputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Compile All Agent Outputs": {
-      "main": [[{ "node": "Save Tasks to Supabase", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Save Tasks to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Save Tasks to Supabase": {
-      "main": [[{ "node": "Update Project Status", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Update Project Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Update Project Status": {
-      "main": [[{ "node": "Trigger Code Generation", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Trigger Code Generation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify: Agents Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -409,5 +805,9 @@
     "saveManualExecutions": true,
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "tags": [{ "name": "factory" }]
+  "tags": [
+    {
+      "name": "factory"
+    }
+  ]
 }

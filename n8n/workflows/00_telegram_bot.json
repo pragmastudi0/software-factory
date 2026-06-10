@@ -1,0 +1,1274 @@
+{
+  "name": "00 - Telegram Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telegram",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "tg-bot-webhook-01",
+      "name": "Receive Telegram Update",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "telegram-bot-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const update = $input.first().json.body || $input.first().json;\n\nconst message = update.message || update.edited_message;\nconst callbackQuery = update.callback_query;\n\nif (callbackQuery) {\n  return [{\n    json: {\n      update_type: 'callback_query',\n      update_id: update.update_id,\n      callback_query_id: callbackQuery.id,\n      chat_id: callbackQuery.message.chat.id,\n      message_id: callbackQuery.message.message_id,\n      user_id: callbackQuery.from.id,\n      username: callbackQuery.from.username || '',\n      first_name: callbackQuery.from.first_name || '',\n      callback_data: callbackQuery.data || ''\n    }\n  }];\n}\n\nif (message) {\n  const text = (message.text || '').trim();\n  const isCommand = text.startsWith('/');\n  let command = null;\n  let args = '';\n\n  if (isCommand) {\n    const parts = text.split(' ');\n    command = parts[0].toLowerCase().split('@')[0];\n    args = parts.slice(1).join(' ').trim();\n  }\n\n  return [{\n    json: {\n      update_type: 'message',\n      update_id: update.update_id,\n      chat_id: message.chat.id,\n      message_id: message.message_id,\n      user_id: message.from.id,\n      username: message.from.username || '',\n      first_name: message.from.first_name || '',\n      text,\n      is_command: isCommand,\n      command,\n      args\n    }\n  }];\n}\n\nreturn [{ json: { update_type: 'unknown', chat_id: 0 } }];"
+      },
+      "id": "tg-bot-parse-02",
+      "name": "Parse Telegram Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const update = $input.first().json;\nif (update.update_type === 'unknown') {\n  return [{ json: { ...update, auth_failed: true, auth_reason: 'unknown_update_type' } }];\n}\n\nconst allowed = ($env.TELEGRAM_ALLOWED_USERS || '')\n  .split(',')\n  .map(s => parseInt(s.trim()))\n  .filter(Boolean);\n\nconst isAllowed = allowed.length === 0 || allowed.includes(update.chat_id);\nreturn [{ json: { ...update, auth_failed: !isAllowed } }];"
+      },
+      "id": "tg-bot-auth-03",
+      "name": "Check Authorization",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.auth_failed }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "tg-bot-auth-check-04",
+      "name": "Unauthorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: '⛔ No estás autorizado para usar este bot.', parse_mode: 'Markdown' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-unauth-05",
+      "name": "Send Unauthorized",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/telegram_conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation,resolution=merge-duplicates" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, username: $json.username, first_name: $json.first_name }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-upsert-conv-06",
+      "name": "Upsert Conversation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "const convRows = $input.first().json;\nconst conv = Array.isArray(convRows) ? convRows[0] : convRows;\nconst update = $('Check Authorization').first().json;\n\nreturn [{\n  json: {\n    ...update,\n    conv_state: conv.state || 'idle',\n    conv_project_id: conv.project_id || null,\n    conv_context: conv.context || {},\n    conv_id: conv.id\n  }\n}];"
+      },
+      "id": "tg-bot-merge-state-07",
+      "name": "Merge Conversation State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 420]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.update_type }}",
+              "rightValue": "callback_query",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "tg-bot-is-callback-08",
+      "name": "Is Callback Query?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse callback_data format: {action}:{approval_type}:{entity_id}:{chat_id}:{timestamp}\nconst d = $input.first().json;\nconst parts = (d.callback_data || '').split(':');\nconst action = parts[0]; // approve | reject | postpone\nconst approvalType = parts[1] || '';\nconst entityId = parts[2] || '';\nconst callbackBase = parts.slice(1).join(':'); // everything after action\n\nconst statusMap = { approve: 'approved', reject: 'rejected', postpone: 'postponed' };\nconst newStatus = statusMap[action] || 'rejected';\n\nconst emojiMap = { approved: '✅', rejected: '❌', postponed: '⏸' };\nconst labelMap = {\n  approved: 'Aprobado',\n  rejected: 'Rechazado',\n  postponed: 'Pospuesto'\n};\nconst typeLabels = {\n  deploy: 'Deployment',\n  start_development: 'Inicio de desarrollo',\n  structural_change: 'Cambio estructural',\n  improvement: 'Mejora',\n  data_deletion: 'Eliminación de datos',\n  refactor: 'Refactorización'\n};\n\nconst confirmMsg = `${emojiMap[newStatus]} *${labelMap[newStatus]}*\\n\\n_${typeLabels[approvalType] || approvalType}_ ha sido ${labelMap[newStatus].toLowerCase()}.`;\n\nreturn [{\n  json: {\n    ...d,\n    action,\n    approval_type: approvalType,\n    entity_id: entityId,\n    callback_base: callbackBase,\n    new_status: newStatus,\n    confirm_message: confirmMsg,\n    should_execute: action === 'approve'\n  }\n}];"
+      },
+      "id": "tg-bot-handle-callback-09",
+      "name": "Handle Approval Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/answerCallbackQuery",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ callback_query_id: $json.callback_query_id, text: $json.action === 'approve' ? '✅ Aprobado' : ($json.action === 'reject' ? '❌ Rechazado' : '⏸ Pospuesto'), show_alert: false }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-answer-cb-10",
+      "name": "Answer Callback Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/telegram_approvals?callback_data=eq.{{ encodeURIComponent($('Handle Approval Callback').first().json.callback_base) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $('Handle Approval Callback').first().json.new_status, responded_at: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-update-approval-11",
+      "name": "Update Approval Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Handle Approval Callback').first().json.chat_id, text: $('Handle Approval Callback').first().json.confirm_message, parse_mode: 'Markdown' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-approval-confirm-12",
+      "name": "Send Approval Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Handle Approval Callback').first().json.should_execute }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "tg-bot-should-execute-13",
+      "name": "Should Execute?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2660, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cb = $('Handle Approval Callback').first().json;\n// Trigger the appropriate workflow based on approval_type via n8n webhook/API\n// For deploy: trigger workflow 06 via HTTP call to its executeWorkflow endpoint\n// For start_development: trigger workflow 02\n// For improvement: trigger workflow 10\nconst typeToWebhook = {\n  start_development: `${$env.N8N_WEBHOOK_URL}webhook/project-setup`,\n  deploy: `${$env.N8N_WEBHOOK_URL}webhook/deploy-trigger`,\n  improvement: `${$env.N8N_WEBHOOK_URL}webhook/improvement-trigger`\n};\nconst webhookUrl = typeToWebhook[cb.approval_type];\nreturn [{ json: { ...cb, trigger_url: webhookUrl, entity_id: cb.entity_id } }];"
+      },
+      "id": "tg-bot-build-trigger-14",
+      "name": "Build Trigger Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2880, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.trigger_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ project_id: $json.entity_id, source: 'telegram_approval', chat_id: $json.chat_id }) }}",
+        "options": { "ignore400": true }
+      },
+      "id": "tg-bot-trigger-workflow-15",
+      "name": "Trigger Approved Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [3100, 220]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "/start", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "start" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "/nuevo", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "nuevo" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "/estado", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "estado" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "/roadmap", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "roadmap" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "/deploy", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "deploy" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "/qa", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "qa" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "/errores", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "errores" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "/mejorar", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "mejorar" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "/feedback", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "feedback" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "/costos", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "costos" },
+            { "conditions": { "options": { "caseSensitive": false }, "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "/agentes", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "agentes" }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "tg-bot-route-cmd-16",
+      "name": "Route Command",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1780, 580]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects?status=neq.archived&status=neq.failed&order=created_at.desc&limit=10&select=id,name,slug,status,vercel_deployment_url,current_iteration,updated_at",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tg-bot-fetch-projects-17",
+      "name": "Fetch Active Projects",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "const projects = $input.first().json;\nconst update = $('Merge Conversation State').first().json;\nconst firstName = update.first_name || 'usuario';\n\nconst statusEmoji = {\n  intake: '📥', setup: '⚙️', agent_pipeline: '🤖', code_generation: '💻',\n  validation: '🔍', deploying: '🚀', qa: '🧪', live: '✅',\n  improving: '🔄', failed: '❌', archived: '📦'\n};\n\nlet projectList = '';\nif (Array.isArray(projects) && projects.length > 0) {\n  projectList = projects.map((p, i) =>\n    `${i + 1}\\. ${statusEmoji[p.status] || '▫️'} *${p.name}* — _${p.status}_`\n  ).join('\\n');\n} else {\n  projectList = '_No hay proyectos activos aún._';\n}\n\nconst msg = `🏭 *Software Factory Autónoma*\\n\\nHola, ${firstName}\\! Soy tu fábrica de software con IA\\.\\n\\n*Proyectos activos:*\\n${projectList}\\n\\n*Comandos disponibles:*\\n/nuevo — Crear proyecto\\n/estado — Estado del proyecto\\n/roadmap — Ver roadmap\\n/deploy — Desplegar\\n/qa — Ejecutar pruebas\\n/errores — Ver errores\\n/mejorar — Solicitar mejora\\n/feedback — Enviar feedback\\n/costos — Ver consumo\\n/agentes — Actividad de agentes`;\n\nreturn [{ json: { ...update, response_text: msg } }];"
+      },
+      "id": "tg-bot-build-start-18",
+      "name": "Build Start Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: $json.response_text, parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-start-19",
+      "name": "Send Start Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 460]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/telegram_conversations?chat_id=eq.{{ $('Merge Conversation State').first().json.chat_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ state: 'awaiting_idea', last_command: '/nuevo' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-set-awaiting-idea-20",
+      "name": "Set State awaiting_idea",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 620]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Merge Conversation State').first().json.chat_id, text: '💡 *Nuevo Proyecto*\\n\\nDescribe tu idea de aplicación en detalle\\. Incluye:\\n\\n• ¿Qué problema resuelve?\\n• ¿Quiénes son los usuarios?\\n• Funcionalidades principales\\n\\n_Ejemplo: \"Un CRM para inmobiliarias con gestión de propiedades, clientes y seguimiento de ventas con integración WhatsApp\"_', parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-nuevo-prompt-21",
+      "name": "Send Nuevo Prompt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 620]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects?select=id,name,slug,status,github_repo_url,vercel_deployment_url,current_iteration,updated_at&or=(name.ilike.*{{ encodeURIComponent($('Merge Conversation State').first().json.args || $('Merge Conversation State').first().json.conv_context?.project_name || '') }}*,slug.ilike.*{{ encodeURIComponent($('Merge Conversation State').first().json.args || '') }}*)&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tg-bot-fetch-project-estado-22",
+      "name": "Fetch Project Estado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 760]
+    },
+    {
+      "parameters": {
+        "jsCode": "const projects = $input.first().json;\nconst update = $('Merge Conversation State').first().json;\n\nif (!Array.isArray(projects) || projects.length === 0) {\n  const noArgs = !update.args;\n  return [{ json: { ...update, response_text: noArgs\n    ? '❓ *¿De qué proyecto?*\\n\\nUsa: `/estado nombre\\-del\\-proyecto`'\n    : `❌ No encontré el proyecto *${update.args}*\\. Verifica el nombre\\.` } }];\n}\n\nconst p = projects[0];\nconst statusEmoji = {\n  intake: '📥', setup: '⚙️', agent_pipeline: '🤖', code_generation: '💻',\n  validation: '🔍', deploying: '🚀', qa: '🧪', live: '✅ Live',\n  improving: '🔄', failed: '❌', archived: '📦'\n};\n\nconst lastUpdate = new Date(p.updated_at);\nconst diffMs = Date.now() - lastUpdate.getTime();\nconst diffHours = Math.round(diffMs / 3600000);\nconst timeAgo = diffHours < 1 ? 'hace menos de 1 hora' : diffHours < 24 ? `hace ${diffHours}h` : `hace ${Math.round(diffHours/24)}d`;\n\nconst deployLine = p.vercel_deployment_url\n  ? `\\n🌐 URL: ${p.vercel_deployment_url}`\n  : '';\nconst githubLine = p.github_repo_url\n  ? `\\n📂 GitHub: ${p.github_repo_url}`\n  : '';\n\nconst msg = `📊 *${p.name}*\\n\\n🔘 Estado: *${statusEmoji[p.status] || p.status}*\\n🔄 Iteración: ${p.current_iteration}\\n🕐 Última actividad: _${timeAgo}_${githubLine}${deployLine}`;\n\nreturn [{ json: { ...update, response_text: msg } }];"
+      },
+      "id": "tg-bot-build-estado-23",
+      "name": "Build Estado Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 760]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: $json.response_text, parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-estado-24",
+      "name": "Send Estado Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 760]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/requirements?select=roadmap,objectives,tech_stack,project_id&is_current=eq.true&project_id=in.({{ ($('Merge Conversation State').first().json.conv_project_id ? $('Merge Conversation State').first().json.conv_project_id : 'none') }})&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tg-bot-fetch-roadmap-25",
+      "name": "Fetch Roadmap Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 900]
+    },
+    {
+      "parameters": {
+        "jsCode": "const reqs = $input.first().json;\nconst update = $('Merge Conversation State').first().json;\n\nif (!Array.isArray(reqs) || reqs.length === 0) {\n  return [{ json: { ...update, response_text: '❌ No se encontró roadmap\\. Primero crea un proyecto con /nuevo y espera a que se genere el PRD\\.' } }];\n}\n\nconst r = reqs[0];\nconst roadmap = Array.isArray(r.roadmap) ? r.roadmap : [];\nconst objectives = Array.isArray(r.objectives) ? r.objectives : [];\n\nlet roadmapText = roadmap.slice(0, 8).map((item, i) => {\n  const label = typeof item === 'string' ? item : (item.milestone || item.title || JSON.stringify(item));\n  const week = item.week || item.sprint || '';\n  const prefix = week ? `📍 _${week}_: ` : `${i + 1}\\. `;\n  return `${prefix}${label}`;\n}).join('\\n');\n\nif (!roadmapText) roadmapText = '_Roadmap no disponible aún_';\n\nconst stack = r.tech_stack || {};\nconst stackText = Object.values(stack).filter(Boolean).slice(0, 5).join(' · ') || 'React \\+ Vite \\+ Supabase';\n\nconst msg = `🗺 *Roadmap del Proyecto*\\n\\n📦 Stack: ${stackText}\\n\\n*Hitos:*\\n${roadmapText}`;\n\nreturn [{ json: { ...update, response_text: msg } }];"
+      },
+      "id": "tg-bot-build-roadmap-26",
+      "name": "Build Roadmap Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 900]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: $json.response_text, parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-roadmap-27",
+      "name": "Send Roadmap Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 900]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects?status=in.(live,qa,deploying,validation,code_generation)&order=updated_at.desc&limit=5&select=id,name,status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tg-bot-fetch-deploy-projects-28",
+      "name": "Fetch Deploy Candidates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 1040]
+    },
+    {
+      "parameters": {
+        "jsCode": "const projects = $input.first().json;\nconst update = $('Merge Conversation State').first().json;\n\nif (!Array.isArray(projects) || projects.length === 0) {\n  return [{ json: { ...update, response_text: '❌ No hay proyectos listos para deploy\\.', skip_approval: true } }];\n}\n\nconst p = projects[0];\n// Build approval callback_data\nconst callbackBase = `deploy:${p.id}:${update.chat_id}:${Date.now()}`;\n\nconst msg = `🚀 *Deploy a Producción*\\n\\n📦 Proyecto: *${p.name}*\\n🔘 Estado actual: _${p.status}_\\n\\n¿Confirmas el despliegue a Vercel?`;\nconst keyboard = {\n  inline_keyboard: [\n    [\n      { text: '✅ APROBAR', callback_data: `approve:${callbackBase}` },\n      { text: '❌ RECHAZAR', callback_data: `reject:${callbackBase}` },\n      { text: '⏸ POSPONER', callback_data: `postpone:${callbackBase}` }\n    ]\n  ]\n};\n\nreturn [{ json: { ...update, response_text: msg, reply_markup: keyboard, project_id: p.id, callback_base: callbackBase, skip_approval: false } }];"
+      },
+      "id": "tg-bot-build-deploy-approval-29",
+      "name": "Build Deploy Approval",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 1040]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/telegram_approvals",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, approval_type: 'deploy', entity_id: $json.project_id, entity_type: 'project', callback_data: $json.callback_base, context: { project_id: $json.project_id } }) }}",
+        "options": { "ignore400": true }
+      },
+      "id": "tg-bot-save-deploy-approval-30",
+      "name": "Save Deploy Approval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 1040]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Build Deploy Approval').first().json.chat_id, text: $('Build Deploy Approval').first().json.response_text, parse_mode: 'MarkdownV2', reply_markup: $('Build Deploy Approval').first().json.reply_markup }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-deploy-approval-31",
+      "name": "Send Deploy Approval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2660, 1040]
+    },
+    {
+      "parameters": {
+        "jsCode": "const update = $('Merge Conversation State').first().json;\nconst projectId = update.conv_project_id || update.args;\n\nif (!projectId) {\n  return [{ json: { ...update, response_text: '🧪 *QA Manual*\\n\\nEspecifica el proyecto: `/qa nombre\\-del\\-proyecto`' } }];\n}\n\nreturn [{\n  json: {\n    ...update,\n    response_text: `🧪 *Ejecutando QA*\\n\\nIniciando suite de pruebas Playwright\\.\\.\\. Recibirás los resultados en unos minutos\\.`,\n    trigger_payload: { project_id: projectId, source: 'telegram_command', chat_id: update.chat_id }\n  }\n}];"
+      },
+      "id": "tg-bot-build-qa-32",
+      "name": "Build QA Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 1180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: $json.response_text, parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-qa-33",
+      "name": "Send QA Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 1180]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/test_results?status=eq.failed&order=created_at.desc&limit=5&select=test_name,test_suite,error_message,created_at,project_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tg-bot-fetch-errors-34",
+      "name": "Fetch Recent Errors",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 1320]
+    },
+    {
+      "parameters": {
+        "jsCode": "const errors = $input.first().json;\nconst update = $('Merge Conversation State').first().json;\n\nif (!Array.isArray(errors) || errors.length === 0) {\n  return [{ json: { ...update, response_text: '✅ No hay errores de QA pendientes\\.' } }];\n}\n\nconst errorLines = errors.map((e, i) =>\n  `${i + 1}\\. *${e.test_name}*\\n   Suite: ${e.test_suite}\\n   Error: _${(e.error_message || 'unknown').slice(0, 80)}_`\n).join('\\n\\n');\n\nconst msg = `🐛 *Errores Recientes \\(${errors.length}\\)*\\n\\n${errorLines}`;\nreturn [{ json: { ...update, response_text: msg } }];"
+      },
+      "id": "tg-bot-build-errors-35",
+      "name": "Build Errors Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 1320]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: $json.response_text, parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-errors-36",
+      "name": "Send Errors Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 1320]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/telegram_conversations?chat_id=eq.{{ $('Merge Conversation State').first().json.chat_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ state: 'awaiting_improvement', last_command: '/mejorar' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-set-awaiting-improve-37",
+      "name": "Set State awaiting_improvement",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 1460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Merge Conversation State').first().json.chat_id, text: '🔄 *Solicitar Mejora*\\n\\nDescribe la mejora que necesitas\\. Por ejemplo:\\n\\n• \"Agregar firma digital a contratos\"\\n• \"Mejorar velocidad del dashboard\"\\n• \"Integrar notificaciones por email\"\\n\\n_La IA analizará tu pedido y creará las tareas necesarias\\._ ', parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-mejorar-prompt-38",
+      "name": "Send Mejorar Prompt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 1460]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/telegram_conversations?chat_id=eq.{{ $('Merge Conversation State').first().json.chat_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ state: 'awaiting_feedback_text', last_command: '/feedback' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-set-awaiting-feedback-39",
+      "name": "Set State awaiting_feedback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 1600]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Merge Conversation State').first().json.chat_id, text: '💬 *Feedback*\\n\\nEscribe tu feedback sobre el proyecto actual\\. Será analizado por IA y si es prioritario \\(≥7/10\\) se creará una tarea automáticamente\\.', parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-feedback-prompt-40",
+      "name": "Send Feedback Prompt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 1600]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/agent_outputs?select=agent_role,token_count,model_used,created_at&order=created_at.desc&limit=50",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tg-bot-fetch-costs-41",
+      "name": "Fetch Cost Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 1740]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.first().json;\nconst update = $('Merge Conversation State').first().json;\n\nif (!Array.isArray(rows) || rows.length === 0) {\n  return [{ json: { ...update, response_text: '📊 No hay datos de consumo aún\\.' } }];\n}\n\n// Aggregate by agent_role\nconst byRole = {};\nlet totalTokens = 0;\nfor (const r of rows) {\n  const role = r.agent_role || 'unknown';\n  byRole[role] = (byRole[role] || 0) + (r.token_count || 0);\n  totalTokens += (r.token_count || 0);\n}\n\nconst PRICE_PER_1K = 0.000075; // gemini-2.0-flash approx\nconst totalCost = (totalTokens / 1000) * PRICE_PER_1K;\n\nconst roleLines = Object.entries(byRole)\n  .sort((a, b) => b[1] - a[1])\n  .slice(0, 8)\n  .map(([role, tokens]) => `  • ${role}: ${tokens.toLocaleString()} tokens`)\n  .join('\\n');\n\nconst msg = `💰 *Consumo de Recursos*\\n\\n🔢 Total tokens: *${totalTokens.toLocaleString()}*\\n💵 Costo estimado: *$${totalCost.toFixed(4)} USD*\\n\\n*Por agente:*\\n${roleLines}\\n\\n_Modelo: gemini\\-2\\.0\\-flash\\-exp_`;\n\nreturn [{ json: { ...update, response_text: msg } }];"
+      },
+      "id": "tg-bot-build-costs-42",
+      "name": "Build Costs Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 1740]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: $json.response_text, parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-costs-43",
+      "name": "Send Costs Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 1740]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/agent_outputs?select=agent_role,model_used,token_count,latency_ms,created_at,project_id&order=created_at.desc&limit=10",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tg-bot-fetch-agents-44",
+      "name": "Fetch Agent Activity",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 1880]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.first().json;\nconst update = $('Merge Conversation State').first().json;\n\nif (!Array.isArray(rows) || rows.length === 0) {\n  return [{ json: { ...update, response_text: '🤖 No hay actividad de agentes aún\\.' } }];\n}\n\nconst agentEmoji = {\n  product_manager: '📋', architect: '🏛', ux_ui_designer: '🎨',\n  backend_engineer: '⚙️', frontend_engineer: '💻', database_engineer: '🗄',\n  qa_engineer: '🧪', devops_engineer: '🚢', security_auditor: '🔒'\n};\n\nconst lines = rows.slice(0, 8).map(r => {\n  const emoji = agentEmoji[r.agent_role] || '🤖';\n  const time = new Date(r.created_at).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });\n  const latency = r.latency_ms ? ` \\(${Math.round(r.latency_ms / 1000)}s\\)` : '';\n  return `${emoji} *${r.agent_role.replace(/_/g, '\\\\_')}* — ${r.token_count || 0} tokens${latency} — ${time}`;\n}).join('\\n');\n\nconst msg = `🤖 *Actividad Reciente de Agentes*\\n\\n${lines}`;\nreturn [{ json: { ...update, response_text: msg } }];"
+      },
+      "id": "tg-bot-build-agents-45",
+      "name": "Build Agents Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 1880]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: $json.response_text, parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-agents-46",
+      "name": "Send Agents Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 1880]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Free text handler — routes based on conversation state\nconst update = $input.first().json;\nconst state = update.conv_state || 'idle';\nconst text = update.text || '';\n\nif (state === 'awaiting_idea') {\n  return [{ json: { ...update, free_text_route: 'create_project', idea: text } }];\n}\nif (state === 'awaiting_improvement') {\n  return [{ json: { ...update, free_text_route: 'improvement', improvement_text: text } }];\n}\nif (state === 'awaiting_feedback_text') {\n  return [{ json: { ...update, free_text_route: 'feedback', feedback_text: text } }];\n}\n\n// idle state: treat as a new idea if it's long enough\nif (text.length >= 20) {\n  return [{ json: { ...update, free_text_route: 'create_project', idea: text } }];\n}\n\nreturn [{ json: { ...update, free_text_route: 'help' } }];"
+      },
+      "id": "tg-bot-route-free-text-47",
+      "name": "Route Free Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 2020]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            { "conditions": { "conditions": [{ "leftValue": "={{ $json.free_text_route }}", "rightValue": "create_project", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "create" },
+            { "conditions": { "conditions": [{ "leftValue": "={{ $json.free_text_route }}", "rightValue": "improvement", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "improvement" },
+            { "conditions": { "conditions": [{ "leftValue": "={{ $json.free_text_route }}", "rightValue": "feedback", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "feedback" }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "tg-bot-switch-free-text-48",
+      "name": "Switch Free Text Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [2220, 2020]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}webhook/intake",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ idea: $json.idea, telegram_chat_id: $json.chat_id, user_name: $json.first_name || $json.username }) }}",
+        "options": { "ignore400": true }
+      },
+      "id": "tg-bot-trigger-intake-49",
+      "name": "Trigger Idea Intake",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 1960]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Route Free Text').first().json.chat_id, text: '⏳ *Creando tu proyecto\\.\\.\\.*\\n\\nEstoy generando el PRD, arquitectura y roadmap\\. Recibirás actualizaciones aquí\\.', parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-creating-50",
+      "name": "Send Creating Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2660, 1960]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/telegram_conversations?chat_id=eq.{{ $('Route Free Text').first().json.chat_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ state: 'idle', last_command: '/nuevo' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-reset-state-intake-51",
+      "name": "Reset State After Intake",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2880, 1960]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}webhook/feedback",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.feedback_text, project_id: $json.conv_project_id || null, source: 'telegram', telegram_chat_id: $json.chat_id }) }}",
+        "options": { "ignore400": true }
+      },
+      "id": "tg-bot-submit-feedback-52",
+      "name": "Submit Feedback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 2100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Route Free Text').first().json.chat_id, text: '✅ *Feedback recibido*\\n\\nGracias\\. Lo analizaré y si es prioritario crearé una tarea automáticamente\\.', parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-feedback-saved-53",
+      "name": "Send Feedback Saved",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2660, 2100]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/telegram_conversations?chat_id=eq.{{ $('Route Free Text').first().json.chat_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ state: 'idle', last_command: '/feedback' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-reset-state-feedback-54",
+      "name": "Reset State After Feedback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2880, 2100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_URL }}webhook/feedback",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.improvement_text, project_id: $json.conv_project_id || null, source: 'telegram_improvement', priority: 8, telegram_chat_id: $json.chat_id }) }}",
+        "options": { "ignore400": true }
+      },
+      "id": "tg-bot-submit-improvement-55",
+      "name": "Submit Improvement",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 2240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Route Free Text').first().json.chat_id, text: '🔄 *Solicitud recibida*\\n\\nAnalizando la mejora con IA\\. En breve recibirás una historia de usuario y estimación de impacto para aprobar\\.', parse_mode: 'MarkdownV2' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-improve-ack-56",
+      "name": "Send Improvement Ack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2660, 2240]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/telegram_conversations?chat_id=eq.{{ $('Route Free Text').first().json.chat_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ state: 'idle', last_command: '/mejorar' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-reset-state-improve-57",
+      "name": "Reset State After Improvement",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2880, 2240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $('Merge Conversation State').first().json.chat_id, text: '❓ No entendí tu mensaje\\. Usa /start para ver los comandos disponibles\\.', parse_mode: 'Markdown' }) }}",
+        "options": {}
+      },
+      "id": "tg-bot-send-help-fallback-58",
+      "name": "Send Help Fallback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 2380]
+    },
+    {
+      "parameters": {
+        "responseCode": 200,
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "id": "tg-bot-respond-ok-59",
+      "name": "Respond 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [240, 500]
+    }
+  ],
+  "connections": {
+    "Receive Telegram Update": {
+      "main": [
+        [{ "node": "Parse Telegram Update", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Telegram Update": {
+      "main": [
+        [{ "node": "Check Authorization", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check Authorization": {
+      "main": [
+        [{ "node": "Unauthorized?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Unauthorized?": {
+      "main": [
+        [{ "node": "Send Unauthorized", "type": "main", "index": 0 }],
+        [{ "node": "Upsert Conversation", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upsert Conversation": {
+      "main": [
+        [{ "node": "Merge Conversation State", "type": "main", "index": 0 }]
+      ]
+    },
+    "Merge Conversation State": {
+      "main": [
+        [{ "node": "Is Callback Query?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Is Callback Query?": {
+      "main": [
+        [{ "node": "Handle Approval Callback", "type": "main", "index": 0 }],
+        [{ "node": "Route Command", "type": "main", "index": 0 }]
+      ]
+    },
+    "Handle Approval Callback": {
+      "main": [
+        [{ "node": "Answer Callback Query", "type": "main", "index": 0 }]
+      ]
+    },
+    "Answer Callback Query": {
+      "main": [
+        [{ "node": "Update Approval Status", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Approval Status": {
+      "main": [
+        [{ "node": "Send Approval Confirmation", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Approval Confirmation": {
+      "main": [
+        [{ "node": "Should Execute?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Should Execute?": {
+      "main": [
+        [{ "node": "Build Trigger Payload", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Build Trigger Payload": {
+      "main": [
+        [{ "node": "Trigger Approved Workflow", "type": "main", "index": 0 }]
+      ]
+    },
+    "Route Command": {
+      "main": [
+        [{ "node": "Fetch Active Projects", "type": "main", "index": 0 }],
+        [{ "node": "Set State awaiting_idea", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Project Estado", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Roadmap Data", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Deploy Candidates", "type": "main", "index": 0 }],
+        [{ "node": "Build QA Response", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Recent Errors", "type": "main", "index": 0 }],
+        [{ "node": "Set State awaiting_improvement", "type": "main", "index": 0 }],
+        [{ "node": "Set State awaiting_feedback", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Cost Data", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Agent Activity", "type": "main", "index": 0 }],
+        [{ "node": "Route Free Text", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Active Projects": {
+      "main": [
+        [{ "node": "Build Start Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Start Response": {
+      "main": [
+        [{ "node": "Send Start Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set State awaiting_idea": {
+      "main": [
+        [{ "node": "Send Nuevo Prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Project Estado": {
+      "main": [
+        [{ "node": "Build Estado Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Estado Response": {
+      "main": [
+        [{ "node": "Send Estado Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Roadmap Data": {
+      "main": [
+        [{ "node": "Build Roadmap Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Roadmap Response": {
+      "main": [
+        [{ "node": "Send Roadmap Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Deploy Candidates": {
+      "main": [
+        [{ "node": "Build Deploy Approval", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Deploy Approval": {
+      "main": [
+        [{ "node": "Save Deploy Approval", "type": "main", "index": 0 }]
+      ]
+    },
+    "Save Deploy Approval": {
+      "main": [
+        [{ "node": "Send Deploy Approval", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build QA Response": {
+      "main": [
+        [{ "node": "Send QA Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Recent Errors": {
+      "main": [
+        [{ "node": "Build Errors Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Errors Response": {
+      "main": [
+        [{ "node": "Send Errors Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set State awaiting_improvement": {
+      "main": [
+        [{ "node": "Send Mejorar Prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set State awaiting_feedback": {
+      "main": [
+        [{ "node": "Send Feedback Prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Cost Data": {
+      "main": [
+        [{ "node": "Build Costs Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Costs Response": {
+      "main": [
+        [{ "node": "Send Costs Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Agent Activity": {
+      "main": [
+        [{ "node": "Build Agents Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Agents Response": {
+      "main": [
+        [{ "node": "Send Agents Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Route Free Text": {
+      "main": [
+        [{ "node": "Switch Free Text Route", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch Free Text Route": {
+      "main": [
+        [{ "node": "Trigger Idea Intake", "type": "main", "index": 0 }],
+        [{ "node": "Submit Improvement", "type": "main", "index": 0 }],
+        [{ "node": "Submit Feedback", "type": "main", "index": 0 }],
+        [{ "node": "Send Help Fallback", "type": "main", "index": 0 }]
+      ]
+    },
+    "Trigger Idea Intake": {
+      "main": [
+        [{ "node": "Send Creating Notification", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Creating Notification": {
+      "main": [
+        [{ "node": "Reset State After Intake", "type": "main", "index": 0 }]
+      ]
+    },
+    "Submit Feedback": {
+      "main": [
+        [{ "node": "Send Feedback Saved", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Feedback Saved": {
+      "main": [
+        [{ "node": "Reset State After Feedback", "type": "main", "index": 0 }]
+      ]
+    },
+    "Submit Improvement": {
+      "main": [
+        [{ "node": "Send Improvement Ack", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Improvement Ack": {
+      "main": [
+        [{ "node": "Reset State After Improvement", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

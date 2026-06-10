@@ -12,7 +12,10 @@
       "name": "Receive Idea",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 300],
+      "position": [
+        240,
+        300
+      ],
       "webhookId": "intake-webhook"
     },
     {
@@ -23,7 +26,10 @@
       "name": "Validate and Sanitize Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [
+        460,
+        300
+      ]
     },
     {
       "parameters": {
@@ -32,10 +38,22 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "Prefer", "value": "return=representation" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
           ]
         },
         "sendBody": true,
@@ -53,7 +71,10 @@
       "name": "Create Project Record",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [680, 300]
+      "position": [
+        680,
+        300
+      ]
     },
     {
       "parameters": {
@@ -63,7 +84,10 @@
       "name": "Build PRD Prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [
+        900,
+        300
+      ]
     },
     {
       "parameters": {
@@ -72,7 +96,10 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
@@ -91,7 +118,10 @@
       "name": "Gemini: Generate PRD",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1120, 300]
+      "position": [
+        1120,
+        300
+      ]
     },
     {
       "parameters": {
@@ -101,7 +131,10 @@
       "name": "Parse PRD Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1340, 300]
+      "position": [
+        1340,
+        300
+      ]
     },
     {
       "parameters": {
@@ -110,10 +143,22 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "Prefer", "value": "return=representation" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
           ]
         },
         "sendBody": true,
@@ -131,7 +176,10 @@
       "name": "Save Requirements",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1560, 300]
+      "position": [
+        1560,
+        300
+      ]
     },
     {
       "parameters": {
@@ -140,15 +188,27 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id", "value": "=eq.{{ $('Parse PRD Response').first().json.project_id }}" }
+            {
+              "name": "id",
+              "value": "=eq.{{ $('Parse PRD Response').first().json.project_id }}"
+            }
           ]
         },
         "sendBody": true,
@@ -166,18 +226,39 @@
       "name": "Update Project Status",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1780, 300]
+      "position": [
+        1780,
+        300
+      ]
     },
     {
       "parameters": {
-        "workflowId": { "__rl": true, "mode": "name", "value": "02 - Project Setup" },
-        "options": { "waitForSubWorkflow": false },
+        "workflowId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "02 - Project Setup"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        },
         "fields": {
           "values": [
-            { "name": "project_id", "stringValue": "={{ $('Parse PRD Response').first().json.project_id }}" },
-            { "name": "requirements_id", "stringValue": "={{ $('Save Requirements').first().json[0].id }}" },
-            { "name": "slug", "stringValue": "={{ $('Parse PRD Response').first().json.project_slug }}" },
-            { "name": "tech_stack", "stringValue": "={{ JSON.stringify($('Parse PRD Response').first().json.tech_stack) }}" }
+            {
+              "name": "project_id",
+              "stringValue": "={{ $('Parse PRD Response').first().json.project_id }}"
+            },
+            {
+              "name": "requirements_id",
+              "stringValue": "={{ $('Save Requirements').first().json[0].id }}"
+            },
+            {
+              "name": "slug",
+              "stringValue": "={{ $('Parse PRD Response').first().json.project_slug }}"
+            },
+            {
+              "name": "tech_stack",
+              "stringValue": "={{ JSON.stringify($('Parse PRD Response').first().json.tech_stack) }}"
+            }
           ]
         }
       },
@@ -185,48 +266,162 @@
       "name": "Trigger Project Setup",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [2000, 300]
+      "position": [
+        2000,
+        300
+      ]
     },
     {
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ status: 'accepted', project_id: $('Parse PRD Response').first().json.project_id, message: 'Your app is being built! Check back soon.' }) }}",
-        "options": { "responseCode": 202 }
+        "options": {
+          "responseCode": 202
+        }
       },
       "id": "intake-respond-10",
       "name": "Send 202 Accepted",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [2220, 300]
+      "position": [
+        2220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: parseInt($env.TELEGRAM_ADMIN_CHAT_ID || '0'), text: '\ud83d\ude80 *Proyecto Creado\\!*\\n\\n' + '\ud83d\udccb Idea: ' + ($('Build PRD Prompt').first().json.idea || '').slice(0,80) + '\\n\\n' + '\ud83d\udd18 Estado: intake \u2192 setup\\n' + '\ud83c\udd94 `' + $('Build PRD Prompt').first().json.project_id + '`\\n\\n' + '_El pipeline de 9 agentes iniciar\u00e1 en breve\\._ ', parse_mode: 'MarkdownV2', disable_notification: false }) }}",
+        "options": {
+          "ignore400": true
+        }
+      },
+      "id": "intake-notify-tg-11",
+      "name": "Notify: Project Created",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1340,
+        160
+      ]
     }
   ],
   "connections": {
     "Receive Idea": {
-      "main": [[{ "node": "Validate and Sanitize Input", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Validate and Sanitize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Validate and Sanitize Input": {
-      "main": [[{ "node": "Create Project Record", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Create Project Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Create Project Record": {
-      "main": [[{ "node": "Build PRD Prompt", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build PRD Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build PRD Prompt": {
-      "main": [[{ "node": "Gemini: Generate PRD", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Gemini: Generate PRD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Gemini: Generate PRD": {
-      "main": [[{ "node": "Parse PRD Response", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Parse PRD Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse PRD Response": {
-      "main": [[{ "node": "Save Requirements", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Save Requirements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Save Requirements": {
-      "main": [[{ "node": "Update Project Status", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Update Project Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Update Project Status": {
-      "main": [[{ "node": "Trigger Project Setup", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Trigger Project Setup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Trigger Project Setup": {
-      "main": [[{ "node": "Send 202 Accepted", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send 202 Accepted",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify: Project Created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -235,5 +430,9 @@
     "saveManualExecutions": true,
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "tags": [{ "name": "factory" }]
+  "tags": [
+    {
+      "name": "factory"
+    }
+  ]
 }

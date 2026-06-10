@@ -7,7 +7,10 @@
       "name": "Execute Workflow Trigger",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1,
-      "position": [240, 300]
+      "position": [
+        240,
+        300
+      ]
     },
     {
       "parameters": {
@@ -16,15 +19,27 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id", "value": "=eq.{{ $json.project_id }}" },
-            { "name": "select", "value": "id,slug,vercel_project_id,github_repo_name,current_iteration" }
+            {
+              "name": "id",
+              "value": "=eq.{{ $json.project_id }}"
+            },
+            {
+              "name": "select",
+              "value": "id,slug,vercel_project_id,github_repo_name,current_iteration"
+            }
           ]
         },
         "options": {}
@@ -33,7 +48,10 @@
       "name": "Fetch Project",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [460, 300]
+      "position": [
+        460,
+        300
+      ]
     },
     {
       "parameters": {
@@ -43,7 +61,10 @@
               "id": "cond-has-vercel-id",
               "leftValue": "={{ $json[0].vercel_project_id }}",
               "rightValue": "",
-              "operator": { "type": "string", "operation": "notEmpty" }
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
             }
           ],
           "combinator": "and"
@@ -53,7 +74,10 @@
       "name": "Vercel Project Exists?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [
+        680,
+        300
+      ]
     },
     {
       "parameters": {
@@ -62,8 +86,14 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.VERCEL_TOKEN }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.VERCEL_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
@@ -81,7 +111,10 @@
       "name": "Vercel: Create Project",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [900, 400]
+      "position": [
+        900,
+        400
+      ]
     },
     {
       "parameters": {
@@ -90,8 +123,14 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.VERCEL_TOKEN }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.VERCEL_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendBody": true,
@@ -109,7 +148,10 @@
       "name": "Vercel: Create Deployment",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1120, 300]
+      "position": [
+        1120,
+        300
+      ]
     },
     {
       "parameters": {
@@ -118,10 +160,22 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "Prefer", "value": "return=representation" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
           ]
         },
         "sendBody": true,
@@ -139,7 +193,10 @@
       "name": "Record Deployment",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1340, 300]
+      "position": [
+        1340,
+        300
+      ]
     },
     {
       "parameters": {
@@ -150,7 +207,10 @@
       "name": "Initial Wait 30s",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
-      "position": [1560, 300]
+      "position": [
+        1560,
+        300
+      ]
     },
     {
       "parameters": {
@@ -159,7 +219,10 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $env.VERCEL_TOKEN }}" }
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.VERCEL_TOKEN }}"
+            }
           ]
         },
         "options": {}
@@ -168,7 +231,10 @@
       "name": "Vercel: Poll Deployment",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1780, 300]
+      "position": [
+        1780,
+        300
+      ]
     },
     {
       "parameters": {
@@ -178,7 +244,10 @@
               "id": "cond-ready",
               "leftValue": "={{ $json.readyState }}",
               "rightValue": "READY",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
@@ -188,7 +257,10 @@
       "name": "Deployment Ready?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2000, 300]
+      "position": [
+        2000,
+        300
+      ]
     },
     {
       "parameters": {
@@ -198,7 +270,10 @@
               "id": "cond-failed",
               "leftValue": "={{ $json.readyState }}",
               "rightValue": "ERROR",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
@@ -208,7 +283,10 @@
       "name": "Deployment Failed?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2220, 400]
+      "position": [
+        2220,
+        400
+      ]
     },
     {
       "parameters": {
@@ -219,7 +297,10 @@
       "name": "Wait 20s",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
-      "position": [2440, 500]
+      "position": [
+        2440,
+        500
+      ]
     },
     {
       "parameters": {
@@ -228,15 +309,27 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "vercel_deployment_id", "value": "=eq.{{ $('Vercel: Create Deployment').first().json.id }}" }
+            {
+              "name": "vercel_deployment_id",
+              "value": "=eq.{{ $('Vercel: Create Deployment').first().json.id }}"
+            }
           ]
         },
         "sendBody": true,
@@ -254,7 +347,10 @@
       "name": "Update Deployment Success",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2220, 200]
+      "position": [
+        2220,
+        200
+      ]
     },
     {
       "parameters": {
@@ -263,15 +359,27 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
-            { "name": "Content-Type", "value": "application/json" }
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id", "value": "=eq.{{ $('Execute Workflow Trigger').first().json.project_id }}" }
+            {
+              "name": "id",
+              "value": "=eq.{{ $('Execute Workflow Trigger').first().json.project_id }}"
+            }
           ]
         },
         "sendBody": true,
@@ -289,18 +397,39 @@
       "name": "Update Project with Deploy URL",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [2440, 200]
+      "position": [
+        2440,
+        200
+      ]
     },
     {
       "parameters": {
-        "workflowId": { "__rl": true, "mode": "name", "value": "07 - QA Automation" },
-        "options": { "waitForSubWorkflow": false },
+        "workflowId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "07 - QA Automation"
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        },
         "fields": {
           "values": [
-            { "name": "project_id", "stringValue": "={{ $('Execute Workflow Trigger').first().json.project_id }}" },
-            { "name": "deployment_url", "stringValue": "=https://{{ $('Vercel: Poll Deployment').first().json.url }}" },
-            { "name": "github_repo_name", "stringValue": "={{ $('Execute Workflow Trigger').first().json.github_repo_name }}" },
-            { "name": "qa_retry_count", "stringValue": "0" }
+            {
+              "name": "project_id",
+              "stringValue": "={{ $('Execute Workflow Trigger').first().json.project_id }}"
+            },
+            {
+              "name": "deployment_url",
+              "stringValue": "=https://{{ $('Vercel: Poll Deployment').first().json.url }}"
+            },
+            {
+              "name": "github_repo_name",
+              "stringValue": "={{ $('Execute Workflow Trigger').first().json.github_repo_name }}"
+            },
+            {
+              "name": "qa_retry_count",
+              "stringValue": "0"
+            }
           ]
         }
       },
@@ -308,57 +437,199 @@
       "name": "Trigger QA Automation",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1,
-      "position": [2660, 200]
+      "position": [
+        2660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: parseInt($env.TELEGRAM_ADMIN_CHAT_ID || '0'), text: '\ud83d\ude80 *Deploy Exitoso\\!*\\n\\n\ud83c\udf10 URL: ' + ($('Update Project with Deploy URL').first().json.deployment_url || $('Vercel: Create Deployment').first().json.url || 'N/A') + '\\n\\nIniciando suite de pruebas QA con Playwright\\.\\.\\.' , parse_mode: 'MarkdownV2' }) }}",
+        "options": {
+          "ignore400": true
+        }
+      },
+      "id": "deploy-notify-success-01",
+      "name": "Notify: Deployed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3200,
+        160
+      ]
     }
   ],
   "connections": {
     "Execute Workflow Trigger": {
-      "main": [[{ "node": "Fetch Project", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Fetch Project",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Fetch Project": {
-      "main": [[{ "node": "Vercel Project Exists?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Vercel Project Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Vercel Project Exists?": {
       "main": [
-        [{ "node": "Vercel: Create Deployment", "type": "main", "index": 0 }],
-        [{ "node": "Vercel: Create Project", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Vercel: Create Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Vercel: Create Project",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Vercel: Create Project": {
-      "main": [[{ "node": "Vercel: Create Deployment", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Vercel: Create Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Vercel: Create Deployment": {
-      "main": [[{ "node": "Record Deployment", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Record Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Record Deployment": {
-      "main": [[{ "node": "Initial Wait 30s", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Initial Wait 30s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Initial Wait 30s": {
-      "main": [[{ "node": "Vercel: Poll Deployment", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Vercel: Poll Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Vercel: Poll Deployment": {
-      "main": [[{ "node": "Deployment Ready?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Deployment Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Deployment Ready?": {
       "main": [
-        [{ "node": "Update Deployment Success", "type": "main", "index": 0 }],
-        [{ "node": "Deployment Failed?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Update Deployment Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Deployment Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Deployment Failed?": {
       "main": [
         [],
-        [{ "node": "Wait 20s", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Wait 20s",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Wait 20s": {
-      "main": [[{ "node": "Vercel: Poll Deployment", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Vercel: Poll Deployment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Update Deployment Success": {
-      "main": [[{ "node": "Update Project with Deploy URL", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Update Project with Deploy URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Update Project with Deploy URL": {
-      "main": [[{ "node": "Trigger QA Automation", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Trigger QA Automation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -367,5 +638,9 @@
     "saveManualExecutions": true,
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "tags": [{ "name": "factory" }]
+  "tags": [
+    {
+      "name": "factory"
+    }
+  ]
 }
