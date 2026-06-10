@@ -1,0 +1,325 @@
+{
+  "name": "07 - QA Automation",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "qa-trigger-01",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/agent_outputs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "project_id", "value": "=eq.{{ $json.project_id }}" },
+            { "name": "agent_role", "value": "=eq.qa_engineer" },
+            { "name": "order", "value": "created_at.desc" },
+            { "name": "limit", "value": "1" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "qa-fetch-test-spec-02",
+      "name": "Fetch QA Test Specification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const qaOutput = $('Fetch QA Test Specification').first().json;\nconst input = $('Execute Workflow Trigger').first().json;\nconst deploymentUrl = input.deployment_url;\nconst repoUrl = `https://github.com/${$env.GITHUB_ORG}/${input.github_repo_name}`;\n\nlet testCode = '';\ntry {\n  const parsed = JSON.parse(qaOutput.raw_output || '{}');\n  const testFiles = parsed.qa?.test_files || [];\n  testCode = testFiles.map(f => `// File: ${f.path}\\n${f.code}`).join('\\n\\n---\\n\\n');\n} catch (e) {\n  testCode = '// Default test - QA spec not parseable\\n' + \n    'test(\"app loads\", async ({ page }) => {\\n' +\n    '  await page.goto(\"/\");\\n' +\n    '  await expect(page.getByRole(\"main\")).toBeVisible();\\n' +\n    '});';\n}\n\nconst playwrightPrompt = `Clone the repository at ${repoUrl}, checkout branch 'develop'.\n\nCreate the following Playwright test file at tests/e2e/factory-tests.spec.ts:\n\n${testCode.substring(0, 3000)}\n\nAlso create playwright.config.ts:\nimport { defineConfig, devices } from '@playwright/test'\nexport default defineConfig({\n  testDir: './tests/e2e',\n  reporter: [['json', { outputFile: 'test-results/results.json' }]],\n  use: { baseURL: '${deploymentUrl}', trace: 'on-first-retry', screenshot: 'only-on-failure' },\n  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],\n})\n\nThen run:\n1. npm ci\n2. npx playwright install chromium --with-deps\n3. BASE_URL=${deploymentUrl} npx playwright test --reporter=json 2>&1 | tee test-output.txt\n\nCopy the content of test-results/results.json and output it VERBATIM wrapped in <TEST_RESULTS> tags like:\n<TEST_RESULTS>\n{ ...json content... }\n</TEST_RESULTS>\n\nIf the JSON file doesn't exist, output the test-output.txt content inside <TEST_RESULTS> tags.`;\n\nreturn [{ json: {\n  project_id: input.project_id,\n  deployment_url: deploymentUrl,\n  github_repo_name: input.github_repo_name,\n  qa_retry_count: parseInt(input.qa_retry_count) || 0,\n  playwright_payload: {\n    initial_user_message: playwrightPrompt,\n    selected_model: $env.OPENHANDS_LLM_MODEL || 'gemini/gemini-2.0-flash-exp',\n    confirmation_mode: false,\n    max_iterations: 40\n  }\n} }];"
+      },
+      "id": "qa-build-test-prompt-03",
+      "name": "Build Playwright Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENHANDS_BASE_URL }}/api/conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.playwright_payload) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "qa-run-tests-04",
+      "name": "OpenHands: Run Tests",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "amount": 120,
+        "unit": "seconds"
+      },
+      "id": "qa-initial-wait-05",
+      "name": "Wait 2min for Tests",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.OPENHANDS_BASE_URL }}/api/conversations/{{ $('OpenHands: Run Tests').first().json.conversation_id || $('OpenHands: Run Tests').first().json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "qa-poll-tests-06",
+      "name": "Poll Test Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-done",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "stopped",
+              "operator": { "type": "string", "operation": "equals" }
+            },
+            {
+              "id": "cond-error",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "error",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "qa-check-done-07",
+      "name": "Tests Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "qa-poll-wait-08",
+      "name": "Wait 30s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ohResponse = $input.first().json;\nconst messages = ohResponse.messages || [];\nconst allContent = messages.map(m => m.content || '').join('\\n');\n\n// Extract TEST_RESULTS JSON from agent output\nconst testResultsMatch = allContent.match(/<TEST_RESULTS>([\\s\\S]*?)<\\/TEST_RESULTS>/);\nlet testResults = { stats: { expected: 0, passed: 0, failed: 0 }, suites: [] };\n\nif (testResultsMatch) {\n  try {\n    testResults = JSON.parse(testResultsMatch[1].trim());\n  } catch (e) {\n    // Text output — estimate from content\n    const passCount = (testResultsMatch[1].match(/passed/gi) || []).length;\n    const failCount = (testResultsMatch[1].match(/failed/gi) || []).length;\n    testResults = { stats: { passed: passCount, failed: failCount }, suites: [] };\n  }\n}\n\n// Extract individual test results\nconst tests = [];\nconst suites = testResults.suites || testResults.testResults || [];\nfor (const suite of suites) {\n  const suiteName = suite.title || suite.name || 'unknown';\n  for (const test of (suite.tests || suite.specs || suite.results || [])) {\n    tests.push({\n      test_suite: suiteName,\n      test_name: test.title || test.name || 'test',\n      status: (test.status === 'passed' || test.ok === true) ? 'passed' : 'failed',\n      error_message: test.failureMessages?.[0] || test.error?.message || null,\n      duration_ms: test.duration || 0\n    });\n  }\n}\n\nconst failedTests = tests.filter(t => t.status === 'failed');\nconst passedTests = tests.filter(t => t.status === 'passed');\n\nconst input = $('Build Playwright Prompt').first().json;\n\nreturn [{ json: {\n  project_id: input.project_id,\n  deployment_url: input.deployment_url,\n  github_repo_name: input.github_repo_name,\n  qa_retry_count: input.qa_retry_count,\n  tests,\n  failed_tests: failedTests,\n  passed_count: passedTests.length,\n  failed_count: failedTests.length,\n  all_passed: failedTests.length === 0\n} }];"
+      },
+      "id": "qa-parse-results-09",
+      "name": "Parse Test Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/test_results",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify($json.tests.map(t => ({ project_id: $json.project_id, test_suite: t.test_suite, test_name: t.test_name, status: t.status, error_message: t.error_message, duration_ms: t.duration_ms }))) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "qa-save-results-10",
+      "name": "Save Test Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-all-pass",
+              "leftValue": "={{ $json.all_passed }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "qa-check-all-pass-11",
+      "name": "All Tests Passed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2220, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-qa-retries",
+              "leftValue": "={{ $json.qa_retry_count }}",
+              "rightValue": "={{ parseInt($env.FACTORY_MAX_QA_FIX_RETRIES) || 3 }}",
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "qa-check-retries-12",
+      "name": "QA Retries Exhausted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2440, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "id", "value": "=eq.{{ $('Parse Test Results').first().json.project_id }}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "", "value": "={{ JSON.stringify({ status: 'live' }) }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "qa-mark-live-13",
+      "name": "Mark Project Live",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 100]
+    },
+    {
+      "parameters": {
+        "workflowId": { "__rl": true, "mode": "name", "value": "08 - Feedback Collection" },
+        "options": { "waitForSubWorkflow": false },
+        "fields": {
+          "values": [
+            { "name": "project_id", "stringValue": "={{ $('Parse Test Results').first().json.project_id }}" },
+            { "name": "deployment_url", "stringValue": "={{ $('Parse Test Results').first().json.deployment_url }}" },
+            { "name": "qa_passed", "stringValue": "={{ $('Parse Test Results').first().json.all_passed }}" }
+          ]
+        }
+      },
+      "id": "qa-trigger-feedback-14",
+      "name": "Trigger Feedback Collection",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [2660, 100]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{ "node": "Fetch QA Test Specification", "type": "main", "index": 0 }]]
+    },
+    "Fetch QA Test Specification": {
+      "main": [[{ "node": "Build Playwright Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Playwright Prompt": {
+      "main": [[{ "node": "OpenHands: Run Tests", "type": "main", "index": 0 }]]
+    },
+    "OpenHands: Run Tests": {
+      "main": [[{ "node": "Wait 2min for Tests", "type": "main", "index": 0 }]]
+    },
+    "Wait 2min for Tests": {
+      "main": [[{ "node": "Poll Test Status", "type": "main", "index": 0 }]]
+    },
+    "Poll Test Status": {
+      "main": [[{ "node": "Tests Complete?", "type": "main", "index": 0 }]]
+    },
+    "Tests Complete?": {
+      "main": [
+        [{ "node": "Parse Test Results", "type": "main", "index": 0 }],
+        [{ "node": "Wait 30s", "type": "main", "index": 0 }]
+      ]
+    },
+    "Wait 30s": {
+      "main": [[{ "node": "Poll Test Status", "type": "main", "index": 0 }]]
+    },
+    "Parse Test Results": {
+      "main": [[{ "node": "Save Test Results", "type": "main", "index": 0 }]]
+    },
+    "Save Test Results": {
+      "main": [[{ "node": "All Tests Passed?", "type": "main", "index": 0 }]]
+    },
+    "All Tests Passed?": {
+      "main": [
+        [{ "node": "Mark Project Live", "type": "main", "index": 0 }],
+        [{ "node": "QA Retries Exhausted?", "type": "main", "index": 0 }]
+      ]
+    },
+    "QA Retries Exhausted?": {
+      "main": [
+        [{ "node": "Mark Project Live", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Mark Project Live": {
+      "main": [[{ "node": "Trigger Feedback Collection", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [{ "name": "factory" }]
+}

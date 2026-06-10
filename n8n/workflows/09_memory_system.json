@@ -1,0 +1,227 @@
+{
+  "name": "09 - Memory System",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "mem-trigger-01",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/memory",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "project_id", "value": "=eq.{{ $json.project_id }}" },
+            { "name": "key", "value": "=eq.{{ $json.key }}" },
+            { "name": "select", "value": "*" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "mem-check-existing-02",
+      "name": "Check Existing Memory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-exists",
+              "leftValue": "={{ $json.length }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "mem-if-exists-03",
+      "name": "Memory Entry Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/memory",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "project_id", "value": "=eq.{{ $('Execute Workflow Trigger').item.json.project_id }}" },
+            { "name": "key", "value": "=eq.{{ $('Execute Workflow Trigger').item.json.key }}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ value: $('Execute Workflow Trigger').item.json.value, importance: Math.min(10, ($json[0].importance || 5) + 1), updated_at: new Date().toISOString() }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "mem-update-existing-04",
+      "name": "Update Existing Memory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/memory",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ project_id: $('Execute Workflow Trigger').item.json.project_id || null, memory_type: $('Execute Workflow Trigger').item.json.memory_type || 'context', key: $('Execute Workflow Trigger').item.json.key, value: $('Execute Workflow Trigger').item.json.value, tags: $('Execute Workflow Trigger').item.json.tags || [], importance: $('Execute Workflow Trigger').item.json.importance || 5, expires_at: $('Execute Workflow Trigger').item.json.expires_at || null }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "mem-insert-new-05",
+      "name": "Insert New Memory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/memory",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "project_id", "value": "=eq.{{ $('Execute Workflow Trigger').item.json.project_id }}" },
+            { "name": "importance", "value": "=lt.3" },
+            { "name": "created_at", "value": "=lt.{{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "mem-prune-old-06",
+      "name": "Prune Old Low-Importance Memories",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/memory",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "project_id", "value": "=eq.{{ $('Execute Workflow Trigger').item.json.project_id }}" },
+            { "name": "importance", "value": "=gte.5" },
+            { "name": "order", "value": "importance.desc,updated_at.desc" },
+            { "name": "limit", "value": "20" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "mem-fetch-context-07",
+      "name": "Fetch Project Context",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const memories = $input.all();\nconst contextLines = memories.map(m => `[${m.json.memory_type}] ${m.json.key}: ${m.json.value}`).join('\\n');\nreturn [{ json: { context_string: contextLines || '(no prior context)', memory_count: memories.length } }];"
+      },
+      "id": "mem-build-context-08",
+      "name": "Build Context String",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{ "node": "Check Existing Memory", "type": "main", "index": 0 }]]
+    },
+    "Check Existing Memory": {
+      "main": [[{ "node": "Memory Entry Exists?", "type": "main", "index": 0 }]]
+    },
+    "Memory Entry Exists?": {
+      "main": [
+        [{ "node": "Update Existing Memory", "type": "main", "index": 0 }],
+        [{ "node": "Insert New Memory", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Existing Memory": {
+      "main": [[{ "node": "Prune Old Low-Importance Memories", "type": "main", "index": 0 }]]
+    },
+    "Insert New Memory": {
+      "main": [[{ "node": "Prune Old Low-Importance Memories", "type": "main", "index": 0 }]]
+    },
+    "Prune Old Low-Importance Memories": {
+      "main": [[{ "node": "Fetch Project Context", "type": "main", "index": 0 }]]
+    },
+    "Fetch Project Context": {
+      "main": [[{ "node": "Build Context String", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [{ "name": "factory" }]
+}

@@ -1,0 +1,340 @@
+{
+  "name": "10 - Continuous Improvement",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "improve-wf-trigger-01",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 200]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 2 * * *" }]
+        }
+      },
+      "id": "improve-cron-trigger-02",
+      "name": "Daily Cron 02:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "status", "value": "=in.(live,improving)" },
+            { "name": "select", "value": "id,slug,github_repo_url,github_repo_name,vercel_deployment_url,current_iteration" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "improve-fetch-live-projects-03",
+      "name": "Fetch Live Projects",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "improve-split-projects-04",
+      "name": "Process Each Project",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/feedback",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "project_id", "value": "=eq.{{ $json.id }}" },
+            { "name": "status", "value": "=eq.new" },
+            { "name": "order", "value": "priority.desc,created_at.desc" },
+            { "name": "limit", "value": "20" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "improve-fetch-feedback-05",
+      "name": "Fetch Unresolved Feedback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-has-feedback",
+              "leftValue": "={{ $json.length }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "improve-check-feedback-06",
+      "name": "Has Feedback to Act On?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/memory",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "project_id", "value": "=eq.{{ $('Process Each Project').item.json.id }}" },
+            { "name": "importance", "value": "=gte.5" },
+            { "name": "order", "value": "importance.desc" },
+            { "name": "limit", "value": "10" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "improve-fetch-memory-07",
+      "name": "Fetch Project Memory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const project = $('Process Each Project').item.json;\nconst feedbackItems = $('Fetch Unresolved Feedback').all().map(f => f.json);\nconst memoryItems = $('Fetch Project Memory').all().map(m => m.json);\n\nconst feedbackSummary = feedbackItems\n  .map(f => `- [${f.priority}/10] ${f.content.substring(0, 200)}`)\n  .join('\\n');\n\nconst memorySummary = memoryItems\n  .map(m => `${m.key}: ${m.value.substring(0, 100)}`)\n  .join('\\n');\n\nconst planPayload = {\n  contents: [{ role: 'user', parts: [{ text: `You are reviewing a live web application and planning improvement tasks.\n\nProject: ${project.slug}\nDeployed at: ${project.vercel_deployment_url}\nIteration: ${project.current_iteration}\n\nUnresolved User Feedback:\n${feedbackSummary || 'No specific feedback yet.'}\n\nProject Memory Context:\n${memorySummary || 'No prior context.'}\n\nCreate a JSON array of 3-5 improvement tasks. Each task should address the most impactful feedback items.\n\nReturn ONLY this JSON structure:\n[\n  {\n    \"title\": \"Short task title\",\n    \"description\": \"What needs to change and why\",\n    \"priority\": 1-10,\n    \"affected_component\": \"component or page name\",\n    \"github_label\": \"bug|feature|enhancement|performance\"\n  }\n]` }] }],\n  generationConfig: { temperature: 0.4, maxOutputTokens: 2048, responseMimeType: 'application/json' }\n};\n\nreturn [{ json: {\n  project_id: project.id,\n  project_slug: project.slug,\n  github_repo_name: project.github_repo_name,\n  github_repo_url: project.github_repo_url,\n  current_iteration: project.current_iteration,\n  feedback_ids: feedbackItems.map(f => f.id),\n  plan_payload: planPayload\n} }];"
+      },
+      "id": "improve-build-plan-prompt-08",
+      "name": "Build Improvement Plan Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.plan_payload) }}",
+        "options": { "timeout": 60000 }
+      },
+      "id": "improve-call-gemini-09",
+      "name": "Gemini: Plan Improvements",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const geminiResponse = $input.first().json;\nconst rawText = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.text || '[]';\nlet tasks;\ntry {\n  tasks = JSON.parse(rawText);\n  if (!Array.isArray(tasks)) tasks = tasks.tasks || [];\n} catch (e) {\n  tasks = [];\n}\n\nconst context = $('Build Improvement Plan Prompt').first().json;\nconst newIteration = context.current_iteration + 1;\n\nreturn tasks.map(t => ({ json: {\n  project_id: context.project_id,\n  project_slug: context.project_slug,\n  github_repo_name: context.github_repo_name,\n  github_repo_url: context.github_repo_url,\n  new_iteration: newIteration,\n  feedback_ids: context.feedback_ids,\n  task_title: t.title,\n  task_description: t.description,\n  task_priority: t.priority || 5,\n  task_label: t.github_label || 'enhancement',\n  affected_component: t.affected_component || 'general'\n} }));"
+      },
+      "id": "improve-parse-tasks-10",
+      "name": "Parse Improvement Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $env.GITHUB_ORG }}/{{ $json.github_repo_name }}/issues",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.GITHUB_TOKEN }}" },
+            { "name": "Accept", "value": "application/vnd.github+json" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ title: $json.task_title, body: $json.task_description + '\\n\\n_Generated by Autonomous Software Factory — Iteration ' + $json.new_iteration + '_', labels: [$json.task_label, 'iteration-' + $json.new_iteration, 'auto-generated'] }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "improve-create-issues-11",
+      "name": "GitHub: Create Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 200]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "id", "value": "=eq.{{ $json.project_id }}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "", "value": "={{ JSON.stringify({ current_iteration: $json.new_iteration, status: 'improving' }) }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "improve-increment-iteration-12",
+      "name": "Increment Project Iteration",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 200]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/feedback",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "id", "value": "=in.({{ $json.feedback_ids.join(',') }})" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "", "value": "={{ JSON.stringify({ status: 'triaged' }) }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "improve-mark-feedback-triaged-13",
+      "name": "Mark Feedback Triaged",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2660, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": { "__rl": true, "mode": "name", "value": "04 - Code Generation" },
+        "options": { "waitForSubWorkflow": false },
+        "fields": {
+          "values": [
+            { "name": "project_id", "stringValue": "={{ $json.project_id }}" },
+            { "name": "github_repo_url", "stringValue": "={{ $json.github_repo_url }}" },
+            { "name": "github_repo_name", "stringValue": "={{ $json.github_repo_name }}" },
+            { "name": "all_outputs", "stringValue": "={}" }
+          ]
+        }
+      },
+      "id": "improve-trigger-codegen-14",
+      "name": "Trigger Code Generation",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [2880, 200]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{ "node": "Fetch Live Projects", "type": "main", "index": 0 }]]
+    },
+    "Daily Cron 02:00 UTC": {
+      "main": [[{ "node": "Fetch Live Projects", "type": "main", "index": 0 }]]
+    },
+    "Fetch Live Projects": {
+      "main": [[{ "node": "Process Each Project", "type": "main", "index": 0 }]]
+    },
+    "Process Each Project": {
+      "main": [[{ "node": "Fetch Unresolved Feedback", "type": "main", "index": 0 }]]
+    },
+    "Fetch Unresolved Feedback": {
+      "main": [[{ "node": "Has Feedback to Act On?", "type": "main", "index": 0 }]]
+    },
+    "Has Feedback to Act On?": {
+      "main": [
+        [{ "node": "Fetch Project Memory", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Fetch Project Memory": {
+      "main": [[{ "node": "Build Improvement Plan Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Improvement Plan Prompt": {
+      "main": [[{ "node": "Gemini: Plan Improvements", "type": "main", "index": 0 }]]
+    },
+    "Gemini: Plan Improvements": {
+      "main": [[{ "node": "Parse Improvement Tasks", "type": "main", "index": 0 }]]
+    },
+    "Parse Improvement Tasks": {
+      "main": [[{ "node": "GitHub: Create Issues", "type": "main", "index": 0 }]]
+    },
+    "GitHub: Create Issues": {
+      "main": [[{ "node": "Increment Project Iteration", "type": "main", "index": 0 }]]
+    },
+    "Increment Project Iteration": {
+      "main": [[{ "node": "Mark Feedback Triaged", "type": "main", "index": 0 }]]
+    },
+    "Mark Feedback Triaged": {
+      "main": [[{ "node": "Trigger Code Generation", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [{ "name": "factory" }]
+}

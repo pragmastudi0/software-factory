@@ -1,0 +1,254 @@
+{
+  "name": "08 - Feedback Collection",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "feedback-wf-trigger-01",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 200]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "feedback",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "feedback-webhook-trigger-02",
+      "name": "Feedback Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 400],
+      "webhookId": "feedback-webhook"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 8 * * *" }]
+        }
+      },
+      "id": "feedback-cron-trigger-03",
+      "name": "Daily Cron 08:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize input from whichever trigger fired\nconst fromWorkflow = $('Execute Workflow Trigger').all();\nconst fromWebhook = $('Feedback Webhook').all();\nconst fromCron = $('Daily Cron 08:00 UTC').all();\n\nlet source = 'cron';\nlet projectId = null;\nlet content = null;\nlet metadata = {};\n\nif (fromWorkflow.length > 0) {\n  source = 'post_deploy';\n  projectId = fromWorkflow[0].json.project_id;\n  content = 'Initial deployment completed. Requesting post-launch feedback.';\n} else if (fromWebhook.length > 0) {\n  source = 'user';\n  const body = fromWebhook[0].json.body || fromWebhook[0].json;\n  projectId = body.project_id;\n  content = body.content || body.feedback || body.message || '';\n  metadata = { url: body.url, session_id: body.session_id };\n} else {\n  source = 'cron';\n  projectId = null; // Will fetch all live projects\n  content = null;\n}\n\nreturn [{ json: { source, project_id: projectId, content, metadata } }];"
+      },
+      "id": "feedback-normalize-04",
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-has-content",
+              "leftValue": "={{ $json.content }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "feedback-check-content-05",
+      "name": "Has Feedback Content?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Analyze this user feedback and return JSON with exactly these fields: { \"sentiment\": \"positive|negative|neutral\", \"priority\": 1-10, \"category\": \"bug|feature|ux|performance|other\", \"summary\": \"one sentence summary\" }\\n\\nFeedback: ' + $json.content }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 256, responseMimeType: 'application/json' } }) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "feedback-analyze-sentiment-06",
+      "name": "Gemini: Analyze Feedback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const geminiResponse = $input.first().json;\nconst rawText = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\nlet analysis;\ntry {\n  analysis = JSON.parse(rawText);\n} catch (e) {\n  analysis = { sentiment: 'neutral', priority: 5, category: 'other', summary: 'Unable to analyze' };\n}\n\nconst input = $('Normalize Input').first().json;\n\nreturn [{ json: {\n  project_id: input.project_id,\n  source: input.source,\n  content: input.content,\n  metadata: input.metadata,\n  sentiment: analysis.sentiment || 'neutral',\n  priority: analysis.priority || 5,\n  category: analysis.category || 'other',\n  summary: analysis.summary || input.content.substring(0, 100)\n} }];"
+      },
+      "id": "feedback-parse-analysis-07",
+      "name": "Parse Sentiment Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/feedback",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ project_id: $json.project_id, source: $json.source, content: $json.content, sentiment: $json.sentiment, priority: $json.priority, status: 'new', metadata: $json.metadata }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "feedback-save-08",
+      "name": "Save Feedback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-high-priority",
+              "leftValue": "={{ $('Parse Sentiment Analysis').first().json.priority }}",
+              "rightValue": 7,
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "feedback-check-priority-09",
+      "name": "High Priority?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": { "__rl": true, "mode": "name", "value": "10 - Continuous Improvement" },
+        "options": { "waitForSubWorkflow": false },
+        "fields": {
+          "values": [
+            { "name": "project_id", "stringValue": "={{ $('Parse Sentiment Analysis').first().json.project_id }}" },
+            { "name": "trigger_reason", "stringValue": "high_priority_feedback" }
+          ]
+        }
+      },
+      "id": "feedback-trigger-improve-10",
+      "name": "Trigger Improvement",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/memory",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "",
+              "value": "={{ JSON.stringify({ project_id: $('Parse Sentiment Analysis').first().json.project_id, memory_type: 'feedback', key: 'feedback_' + Date.now(), value: $('Parse Sentiment Analysis').first().json.summary, tags: [$('Parse Sentiment Analysis').first().json.category, $('Parse Sentiment Analysis').first().json.sentiment], importance: $('Parse Sentiment Analysis').first().json.priority }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "feedback-save-memory-11",
+      "name": "Save to Memory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'received', message: 'Feedback saved. Thank you!' }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "feedback-webhook-respond-12",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2000, 400]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{ "node": "Normalize Input", "type": "main", "index": 0 }]]
+    },
+    "Feedback Webhook": {
+      "main": [[{ "node": "Normalize Input", "type": "main", "index": 0 }]]
+    },
+    "Daily Cron 08:00 UTC": {
+      "main": [[{ "node": "Normalize Input", "type": "main", "index": 0 }]]
+    },
+    "Normalize Input": {
+      "main": [[{ "node": "Has Feedback Content?", "type": "main", "index": 0 }]]
+    },
+    "Has Feedback Content?": {
+      "main": [
+        [{ "node": "Gemini: Analyze Feedback", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Gemini: Analyze Feedback": {
+      "main": [[{ "node": "Parse Sentiment Analysis", "type": "main", "index": 0 }]]
+    },
+    "Parse Sentiment Analysis": {
+      "main": [[{ "node": "Save Feedback", "type": "main", "index": 0 }]]
+    },
+    "Save Feedback": {
+      "main": [[{ "node": "High Priority?", "type": "main", "index": 0 }]]
+    },
+    "High Priority?": {
+      "main": [
+        [{ "node": "Trigger Improvement", "type": "main", "index": 0 }],
+        [{ "node": "Save to Memory", "type": "main", "index": 0 }]
+      ]
+    },
+    "Trigger Improvement": {
+      "main": [[{ "node": "Save to Memory", "type": "main", "index": 0 }]]
+    },
+    "Save to Memory": {
+      "main": [[{ "node": "Webhook Response", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [{ "name": "factory" }]
+}

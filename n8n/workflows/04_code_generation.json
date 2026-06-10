@@ -1,0 +1,240 @@
+{
+  "name": "04 - Code Generation",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "codegen-trigger-01",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst allOutputs = JSON.parse(input.all_outputs || '{}');\nconst repoUrl = `https://github.com/${process.env.GITHUB_ORG || $env.GITHUB_ORG}/${input.github_repo_name}`;\n\n// Build comprehensive OpenHands task prompt\nconst prompt = `## YOUR MISSION\n\nYou are an expert software developer. Build a complete, production-ready web application and push all code to GitHub.\n\n## Repository\n- URL: ${repoUrl}\n- Branch: develop (create from main if it doesn't exist)\n- GitHub Token: Available as GITHUB_TOKEN environment variable\n\n## Application Architecture\n\n### Architect Specification\n${(allOutputs.architect || '').substring(0, 2000)}\n\n### Backend Specification  \n${(allOutputs.backend_engineer || '').substring(0, 1500)}\n\n### Frontend Specification\n${(allOutputs.frontend_engineer || '').substring(0, 1500)}\n\n### Database Schema\n${(allOutputs.database_engineer || '').substring(0, 1000)}\n\n### Security Requirements\n${(allOutputs.security_auditor || '').substring(0, 800)}\n\n### DevOps/Build Configuration\n${(allOutputs.devops_engineer || '').substring(0, 800)}\n\n## REQUIRED FILES (minimum)\n\n1. package.json (with all listed dependencies)\n2. vite.config.ts\n3. tsconfig.json\n4. tailwind.config.ts\n5. postcss.config.js\n6. .eslintrc.json\n7. vercel.json (with SPA rewrite rule)\n8. index.html\n9. src/main.tsx\n10. src/App.tsx (with React Router routes)\n11. src/index.css (with Tailwind directives)\n12. src/lib/supabase.ts (Supabase client init)\n13. src/types/index.ts (all TypeScript interfaces)\n14. All components from the architecture spec\n15. All pages from the architecture spec\n16. All hooks from the architecture spec\n17. .github/workflows/ci.yml (CI pipeline)\n\n## ENVIRONMENT VARIABLES IN VERCEL\n- VITE_SUPABASE_URL\n- VITE_SUPABASE_ANON_KEY\n\nFor development/build testing, use placeholder values:\n- VITE_SUPABASE_URL=https://placeholder.supabase.co\n- VITE_SUPABASE_ANON_KEY=placeholder_key\n\n## STEP-BY-STEP INSTRUCTIONS\n\n1. Clone or initialize the repository\n   git clone ${repoUrl} project\n   cd project\n   git checkout develop 2>/dev/null || git checkout -b develop\n\n2. Create ALL application files following the specifications above\n\n3. Create a .env.local file for build testing:\n   VITE_SUPABASE_URL=https://placeholder.supabase.co\n   VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder\n\n4. Install dependencies and verify build passes:\n   npm install\n   npm run lint\n   npm run typecheck\n   npm run build\n\n5. Fix ALL errors before committing. Do not leave TypeScript errors, lint errors, or build failures.\n\n6. Once build passes:\n   git add -A\n   git commit -m \"feat: initial implementation\"\n   git push origin develop\n   \n7. Create a pull request from develop to main\n\n## COMPLETION SIGNAL\nWhen you have successfully pushed the code and the build passes, say exactly:\n\"TASK COMPLETE: Code pushed to ${repoUrl}, branch develop. Build passing.\"\n`;\n\nconst openHandsPayload = {\n  initial_user_message: prompt,\n  selected_model: $env.OPENHANDS_LLM_MODEL || 'gemini/gemini-2.0-flash-exp',\n  confirmation_mode: false,\n  max_iterations: 100\n};\n\nreturn [{ json: {\n  project_id: input.project_id,\n  github_repo_url: repoUrl,\n  github_repo_name: input.github_repo_name,\n  openhands_payload: openHandsPayload\n} }];"
+      },
+      "id": "codegen-build-prompt-02",
+      "name": "Build OpenHands Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENHANDS_BASE_URL }}/api/conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.openhands_payload) }}",
+        "options": { "timeout": 60000 }
+      },
+      "id": "codegen-start-conversation-03",
+      "name": "OpenHands: Start Conversation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst conversationId = response.conversation_id || response.id;\nif (!conversationId) throw new Error('OpenHands did not return a conversation_id: ' + JSON.stringify(response));\nreturn [{ json: {\n  conversation_id: conversationId,\n  project_id: $('Build OpenHands Prompt').first().json.project_id,\n  github_repo_url: $('Build OpenHands Prompt').first().json.github_repo_url,\n  github_repo_name: $('Build OpenHands Prompt').first().json.github_repo_name,\n  poll_count: 0\n} }];"
+      },
+      "id": "codegen-save-conv-id-04",
+      "name": "Save Conversation ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "amount": 60,
+        "unit": "seconds"
+      },
+      "id": "codegen-initial-wait-05",
+      "name": "Initial Wait 60s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.OPENHANDS_BASE_URL }}/api/conversations/{{ $json.conversation_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "codegen-poll-status-06",
+      "name": "OpenHands: Poll Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "id": "cond-stopped",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "stopped",
+              "operator": { "type": "string", "operation": "equals" }
+            },
+            {
+              "id": "cond-error",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "error",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "codegen-check-done-07",
+      "name": "Is Task Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pollData = $('Save Conversation ID').first().json;\nconst newPollCount = (pollData.poll_count || 0) + 1;\nif (newPollCount > 60) {\n  throw new Error('OpenHands task timed out after 30 minutes. Conversation: ' + pollData.conversation_id);\n}\nreturn [{ json: { ...pollData, poll_count: newPollCount } }];"
+      },
+      "id": "codegen-check-timeout-08",
+      "name": "Check Timeout",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "codegen-poll-wait-09",
+      "name": "Wait 30s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [2000, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ohResponse = $input.first().json;\nconst messages = ohResponse.messages || [];\nconst lastAgentMessage = [...messages].reverse().find(m => m.source === 'agent');\nconst lastMessageContent = lastAgentMessage?.content || '';\nconst isSuccess = lastMessageContent.includes('TASK COMPLETE') || lastMessageContent.includes('pushed to') || lastMessageContent.includes('pull request');\n\nconst convData = $('Save Conversation ID').first().json;\n\nreturn [{ json: {\n  conversation_id: convData.conversation_id,\n  project_id: convData.project_id,\n  github_repo_url: convData.github_repo_url,\n  github_repo_name: convData.github_repo_name,\n  task_succeeded: isSuccess,\n  last_message: lastMessageContent.substring(0, 500),\n  status: ohResponse.status\n} }];"
+      },
+      "id": "codegen-parse-result-10",
+      "name": "Parse OpenHands Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "id", "value": "=eq.{{ $json.project_id }}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "", "value": "={{ JSON.stringify({ status: 'validation' }) }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "codegen-update-status-11",
+      "name": "Update Project Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": { "__rl": true, "mode": "name", "value": "05 - Validation Loop" },
+        "options": { "waitForSubWorkflow": false },
+        "fields": {
+          "values": [
+            { "name": "project_id", "stringValue": "={{ $('Parse OpenHands Result').first().json.project_id }}" },
+            { "name": "github_repo_url", "stringValue": "={{ $('Parse OpenHands Result').first().json.github_repo_url }}" },
+            { "name": "github_repo_name", "stringValue": "={{ $('Parse OpenHands Result').first().json.github_repo_name }}" },
+            { "name": "branch", "stringValue": "develop" },
+            { "name": "retry_count", "stringValue": "0" }
+          ]
+        }
+      },
+      "id": "codegen-trigger-validation-12",
+      "name": "Trigger Validation Loop",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [2220, 200]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{ "node": "Build OpenHands Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build OpenHands Prompt": {
+      "main": [[{ "node": "OpenHands: Start Conversation", "type": "main", "index": 0 }]]
+    },
+    "OpenHands: Start Conversation": {
+      "main": [[{ "node": "Save Conversation ID", "type": "main", "index": 0 }]]
+    },
+    "Save Conversation ID": {
+      "main": [[{ "node": "Initial Wait 60s", "type": "main", "index": 0 }]]
+    },
+    "Initial Wait 60s": {
+      "main": [[{ "node": "OpenHands: Poll Status", "type": "main", "index": 0 }]]
+    },
+    "OpenHands: Poll Status": {
+      "main": [[{ "node": "Is Task Complete?", "type": "main", "index": 0 }]]
+    },
+    "Is Task Complete?": {
+      "main": [
+        [{ "node": "Parse OpenHands Result", "type": "main", "index": 0 }],
+        [{ "node": "Check Timeout", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check Timeout": {
+      "main": [[{ "node": "Wait 30s", "type": "main", "index": 0 }]]
+    },
+    "Wait 30s": {
+      "main": [[{ "node": "OpenHands: Poll Status", "type": "main", "index": 0 }]]
+    },
+    "Parse OpenHands Result": {
+      "main": [[{ "node": "Update Project Status", "type": "main", "index": 0 }]]
+    },
+    "Update Project Status": {
+      "main": [[{ "node": "Trigger Validation Loop", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [{ "name": "factory" }]
+}

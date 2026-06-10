@@ -1,0 +1,360 @@
+{
+  "name": "05 - Validation Loop",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "valid-trigger-01",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst repoUrl = input.github_repo_url;\nconst branch = input.branch || 'develop';\n\nconst prompt = `Clone the repository at ${repoUrl}, checkout branch '${branch}'.\n\nRun these commands in order and report the EXACT output of each:\n1. npm ci\n2. npm run lint\n3. npm run typecheck  \n4. npm run build\n\nIf any command fails, report the complete error output including file names and line numbers.\n\nIf ALL commands pass, say exactly: \"VALIDATION PASSED: all checks green\"\nIf any command fails, say exactly: \"VALIDATION FAILED: <command-name> failed\" followed by the complete error log.`;\n\nreturn [{ json: {\n  ...input,\n  validation_payload: {\n    initial_user_message: prompt,\n    selected_model: $env.OPENHANDS_LLM_MODEL || 'gemini/gemini-2.0-flash-exp',\n    confirmation_mode: false,\n    max_iterations: 30\n  }\n} }];"
+      },
+      "id": "valid-build-prompt-02",
+      "name": "Build Validation Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENHANDS_BASE_URL }}/api/conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.validation_payload) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "valid-start-conv-03",
+      "name": "OpenHands: Start Validation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "valid-initial-wait-04",
+      "name": "Wait 30s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.OPENHANDS_BASE_URL }}/api/conversations/{{ $('OpenHands: Start Validation').first().json.conversation_id || $('OpenHands: Start Validation').first().json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "valid-poll-05",
+      "name": "Poll Validation Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-done",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "stopped",
+              "operator": { "type": "string", "operation": "equals" }
+            },
+            {
+              "id": "cond-error",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "error",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "valid-check-done-06",
+      "name": "Validation Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "amount": 20,
+        "unit": "seconds"
+      },
+      "id": "valid-poll-wait-07",
+      "name": "Poll Wait 20s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ohResponse = $input.first().json;\nconst messages = ohResponse.messages || [];\nconst lastAgentMessage = [...messages].reverse().find(m => m.source === 'agent');\nconst lastContent = lastAgentMessage?.content || '';\n\nconst passed = lastContent.includes('VALIDATION PASSED');\nconst errorLog = passed ? '' : lastContent.substring(0, 2000);\n\nconst input = $('Execute Workflow Trigger').first().json;\n\nreturn [{ json: {\n  project_id: input.project_id,\n  github_repo_url: input.github_repo_url,\n  github_repo_name: input.github_repo_name,\n  branch: input.branch || 'develop',\n  retry_count: parseInt(input.retry_count) || 0,\n  validation_passed: passed,\n  error_log: errorLog,\n  last_message: lastContent\n} }];"
+      },
+      "id": "valid-parse-result-08",
+      "name": "Parse Validation Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-passed",
+              "leftValue": "={{ $json.validation_passed }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "valid-check-passed-09",
+      "name": "Build Passed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-retries",
+              "leftValue": "={{ $json.retry_count }}",
+              "rightValue": "={{ parseInt($env.FACTORY_MAX_CODE_FIX_RETRIES) || 3 }}",
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "valid-check-retries-10",
+      "name": "Retries Exhausted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/error_patterns",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "order", "value": "success_count.desc" },
+            { "name": "limit", "value": "10" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "valid-fetch-patterns-11",
+      "name": "Fetch Error Patterns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const patterns = $('Fetch Error Patterns').all();\nconst errorLog = $('Parse Validation Result').first().json.error_log;\nconst repoUrl = $('Parse Validation Result').first().json.github_repo_url;\nconst branch = $('Parse Validation Result').first().json.branch;\n\n// Find matching patterns\nconst matchedPatterns = patterns\n  .map(p => p.json)\n  .filter(p => errorLog && errorLog.includes(p.pattern))\n  .slice(0, 3);\n\nconst patternGuidance = matchedPatterns.length > 0\n  ? '\\n\\nKNOWN FIXES TO APPLY:\\n' + matchedPatterns.map(p => `- ${p.error_summary}: ${p.solution}`).join('\\n')\n  : '';\n\nconst fixPrompt = `You have a build that is failing. Clone ${repoUrl}, checkout branch '${branch}'.\n\nBUILD ERROR LOG:\n${errorLog}\n${patternGuidance}\n\nFix ALL errors. Then run:\n1. npm ci\n2. npm run lint\n3. npm run typecheck\n4. npm run build\n\nOnce ALL commands pass, commit the fixes:\ngit add -A\ngit commit -m \"fix: resolve build errors\"\ngit push origin ${branch}\n\nWhen done, say: \"FIX COMPLETE: build now passing\"`;\n\nconst retryCount = parseInt($('Parse Validation Result').first().json.retry_count) + 1;\n\nreturn [{ json: {\n  ...($('Parse Validation Result').first().json),\n  retry_count: retryCount,\n  fix_payload: {\n    initial_user_message: fixPrompt,\n    selected_model: $env.OPENHANDS_LLM_MODEL || 'gemini/gemini-2.0-flash-exp',\n    confirmation_mode: false,\n    max_iterations: 50\n  }\n} }];"
+      },
+      "id": "valid-build-fix-prompt-12",
+      "name": "Build Fix Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2440, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENHANDS_BASE_URL }}/api/conversations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.OPENHANDS_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.fix_payload) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "valid-start-fix-13",
+      "name": "OpenHands: Fix Errors",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2660, 400]
+    },
+    {
+      "parameters": {
+        "amount": 90,
+        "unit": "seconds"
+      },
+      "id": "valid-fix-wait-14",
+      "name": "Wait for Fix 90s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [2880, 400]
+    },
+    {
+      "parameters": {
+        "workflowId": { "__rl": true, "mode": "name", "value": "05 - Validation Loop" },
+        "options": { "waitForSubWorkflow": false },
+        "fields": {
+          "values": [
+            { "name": "project_id", "stringValue": "={{ $('Build Fix Prompt').first().json.project_id }}" },
+            { "name": "github_repo_url", "stringValue": "={{ $('Build Fix Prompt').first().json.github_repo_url }}" },
+            { "name": "github_repo_name", "stringValue": "={{ $('Build Fix Prompt').first().json.github_repo_name }}" },
+            { "name": "branch", "stringValue": "={{ $('Build Fix Prompt').first().json.branch }}" },
+            { "name": "retry_count", "stringValue": "={{ $('Build Fix Prompt').first().json.retry_count }}" }
+          ]
+        }
+      },
+      "id": "valid-recurse-15",
+      "name": "Re-run Validation",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [3100, 400]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/projects",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "id", "value": "=eq.{{ $json.project_id }}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "", "value": "={{ JSON.stringify({ status: 'failed' }) }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "valid-mark-failed-16",
+      "name": "Mark Project Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 200]
+    },
+    {
+      "parameters": {
+        "workflowId": { "__rl": true, "mode": "name", "value": "06 - Deployment" },
+        "options": { "waitForSubWorkflow": false },
+        "fields": {
+          "values": [
+            { "name": "project_id", "stringValue": "={{ $json.project_id }}" },
+            { "name": "github_repo_url", "stringValue": "={{ $json.github_repo_url }}" },
+            { "name": "github_repo_name", "stringValue": "={{ $json.github_repo_name }}" }
+          ]
+        }
+      },
+      "id": "valid-trigger-deploy-17",
+      "name": "Trigger Deployment",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [2000, 100]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{ "node": "Build Validation Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Validation Prompt": {
+      "main": [[{ "node": "OpenHands: Start Validation", "type": "main", "index": 0 }]]
+    },
+    "OpenHands: Start Validation": {
+      "main": [[{ "node": "Wait 30s", "type": "main", "index": 0 }]]
+    },
+    "Wait 30s": {
+      "main": [[{ "node": "Poll Validation Status", "type": "main", "index": 0 }]]
+    },
+    "Poll Validation Status": {
+      "main": [[{ "node": "Validation Complete?", "type": "main", "index": 0 }]]
+    },
+    "Validation Complete?": {
+      "main": [
+        [{ "node": "Parse Validation Result", "type": "main", "index": 0 }],
+        [{ "node": "Poll Wait 20s", "type": "main", "index": 0 }]
+      ]
+    },
+    "Poll Wait 20s": {
+      "main": [[{ "node": "Poll Validation Status", "type": "main", "index": 0 }]]
+    },
+    "Parse Validation Result": {
+      "main": [[{ "node": "Build Passed?", "type": "main", "index": 0 }]]
+    },
+    "Build Passed?": {
+      "main": [
+        [{ "node": "Trigger Deployment", "type": "main", "index": 0 }],
+        [{ "node": "Retries Exhausted?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Retries Exhausted?": {
+      "main": [
+        [{ "node": "Mark Project Failed", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Error Patterns", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Error Patterns": {
+      "main": [[{ "node": "Build Fix Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Fix Prompt": {
+      "main": [[{ "node": "OpenHands: Fix Errors", "type": "main", "index": 0 }]]
+    },
+    "OpenHands: Fix Errors": {
+      "main": [[{ "node": "Wait for Fix 90s", "type": "main", "index": 0 }]]
+    },
+    "Wait for Fix 90s": {
+      "main": [[{ "node": "Re-run Validation", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [{ "name": "factory" }]
+}
