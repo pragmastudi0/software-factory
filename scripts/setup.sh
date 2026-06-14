@@ -183,15 +183,14 @@ FAILED=0
 for WORKFLOW_FILE in "$WORKFLOW_DIR"/*.json; do
   WORKFLOW_NAME=$(basename "$WORKFLOW_FILE" .json)
 
-  HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" \
+  # Use -o to write body to temp file and -w for status code (works correctly on macOS + Linux)
+  TMP_BODY=$(mktemp)
+  HTTP_CODE=$(curl -s -o "$TMP_BODY" -w "%{http_code}" \
     -u "$AUTH" \
     -X POST \
     -H "Content-Type: application/json" \
     -d @"${WORKFLOW_FILE}" \
     "${N8N_URL}/api/v1/workflows" 2>/dev/null)
-
-  HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -1)
-  BODY=$(echo "$HTTP_RESPONSE" | head -1)
 
   if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ]; then
     log "  ✓ Imported: ${WORKFLOW_NAME}"
@@ -199,19 +198,21 @@ for WORKFLOW_FILE in "$WORKFLOW_DIR"/*.json; do
 
     # Extract workflow ID and activate it
     if $JQ_AVAILABLE; then
-      WF_ID=$(echo "$BODY" | jq -r '.id // empty')
+      WF_ID=$(jq -r '.id // empty' "$TMP_BODY" 2>/dev/null)
       if [ -n "$WF_ID" ]; then
         curl -s -u "$AUTH" \
           -X PATCH \
           -H "Content-Type: application/json" \
           -d '{"active": true}' \
           "${N8N_URL}/api/v1/workflows/${WF_ID}" >/dev/null 2>&1
+        log "  ✓ Activated: ${WORKFLOW_NAME} (id: ${WF_ID})"
       fi
     fi
   else
     warn "  ✗ Failed to import ${WORKFLOW_NAME} (HTTP ${HTTP_CODE})"
     FAILED=$((FAILED + 1))
   fi
+  rm -f "$TMP_BODY"
 done
 
 log "Workflows imported: ${IMPORTED}, failed: ${FAILED}."
